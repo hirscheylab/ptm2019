@@ -249,7 +249,8 @@ ggplot(CoA) +
 ggsave("fig3.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 
 ```
-#code chunk to count acyl-phosphates
+#Note (acyl-phosphates)
+Code chunk to count acyl-phosphates. 10 total counted, although strangely two are listed at 266 Da. Same or different?
 ```{r}
 phosphate <- metabolites %>% 
   filter(str_detect(smiles, "C\\(=O\\)OP")) %>% #regex the smiles code for carbonyl-phosphate bond
@@ -265,7 +266,7 @@ phosphate %>%
 ```
 
 ##Note (lysine)
-In this code chunk, the goal is to count and summarize lysine modifications.
+In this code chunk, the goal is to count and summarize lysine modifications. Counted 57 (as of Feb 2019), however does not include 3 published modifiations: succination, itaconylation, or s-acetylation, so OK to conclude 60, at least.
 ```{r}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
