@@ -1,0 +1,327 @@
+---
+title: "Nat. Chem. Bio (2019)"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) notebook accompanying the invited review on reactive activate carbon species, protein modifications, and carbon stress. When you execute code within the notebook, the results appear beneath the code and Figures will be save to the working directory. 
+
+-number
+-distribution across amino acids
+
+##Load libraries
+```{r warning=FALSE, echo=TRUE}
+
+#Load libraries
+library(tidyverse)
+library(janitor)
+library(viridis)
+library(XML)
+
+#clear environment
+rm(list=ls()) 
+
+#print Session information for provenance and reproducibility
+utils:::print.sessionInfo(sessionInfo()[-7]) #You can remove an item from sessionInfo(), which is a list with a class attribute, by printing the resulting object omitting one of the list items (omitted list of packages installed, but not loaded)
+
+#Set theme
+theme_set(theme_light())
+```
+
+##Figure 1
+Overall goal is to quanitfy known landscape of protein amino acids. Chose to get data from Uniprot, as a comprehensive and validated resouce containing data for human proteins. 
+```{r}
+ptm_raw <- read_tsv("https://www.uniprot.org/docs/ptmlist.txt", col_names = FALSE, skip = 48) #skip 48 first lines which contain data file dictionary
+
+#URL points to a datafile, to increase reproducibility; datafile is also saved and downloaded 12/21/2018 in working directory in case URL link breaks
+
+#make working df
+ptm <- ptm_raw %>% 
+  separate(X1, c("key", "value"), sep = 3) %>% 
+  mutate(id = if_else(grepl("ID", key), value, NA_character_)) %>% #must call NA_char so that fill fxn works
+  fill(id) #need fill fxn to populate ids across all observations, so that spread can work
+
+#clean more
+ptm$key <- str_trim(ptm$key, side = "right") #use stringr pkg to remove white space *janitor works on colnames only
+
+#drop rows, duplicate rows are causing problems with spread, and don't need them
+ptm <- ptm %>% 
+  filter(!key %in% c("//", "TR", "DR", "---"))
+  
+#This is code I used to ensure that there were no duplicates
+#ptm <- ptm %>%
+#  unite(key_id, c("key", "id"), sep = "_", remove = FALSE)
+#ptm_dup <- get_dupes(ptm, key_id)
+#I check the ptm_dup df and made to sure to drop the keys that had more than one entry (immediate preceeding code chunk)
+
+#spread data
+ptm <- ptm %>% 
+  spread(key, value) #not clever names, but appropriate
+
+#gives a tibble of 645 observations, therefore 645 unique PTMs
+
+#double check to see no duplicates
+#get_dupes(ptm, id)
+
+#more cleaning steps
+ptm$MM <- as.numeric(ptm$MM)
+ptm$MA <- as.numeric(ptm$MA)
+ptm$KW <- str_replace(ptm$KW, "\\.", "") #need two \\ to mean literal "."
+ptm$KW <- as.factor(ptm$KW)
+ptm$FT <- str_trim(ptm$FT, side = "left") #use stringr pkg to remove white space
+ptm$TG <- str_trim(ptm$TG, side = "left")
+ptm$TG <- str_replace(ptm$TG, "\\.", "") #need two \\ to mean literal "."
+
+
+#a little bit of eda
+count(ptm, FT, sort = TRUE)
+#should I include crosslinks? Or just modifications?
+
+ptm %>%
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  summarize(n = n())
+#This code snippet give me the total number of unique modifications, with CROSSLINK removed; total is 498. But I know the list doens't include 3 recently published modifications discovered by our group, plus a few others by YMZ (considering this a lag in DB updating), so OK to conclude over 500.
+
+count(ptm, KW, sort = TRUE) #number of modifications by keyword
+#a lot of glycoproteins!
+
+#ptm %>%
+#  filter(FT == "MOD_RES") %>% #include only modified AAs, no cross links, no lipids, no glycoproteins?
+#  count(TG, sort = TRUE) %>% #target (TG) is exactly what I need
+#  mutate(TG = fct_reorder(TG, n)) %>% 
+#  ggplot(aes(TG, n)) +
+#  geom_col() +
+#  coord_flip() +
+#  labs(x = "") + 
+#  expand_limits(y = 40)
+#commented this out because it only includes modified AAs; not sure if this is useful
+
+ptm %>%
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  count(TG, sort = TRUE)
+
+ptm %>%
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  count(TG, FT, sort = TRUE) %>% #target (TG) is exactly what I need
+  mutate(TG = fct_reorder2(TG, FT, n, .desc = FALSE)) %>% 
+  ggplot(aes(TG, n, fill = FT)) +
+  geom_col() +
+  coord_flip() +
+  #labs(x = "", title = "Distribution of Modifications Across Amino Acids", caption = "Plot by @matthewhirschey | Data from @Uniprot") + 
+  labs(x = "") +
+  expand_limits(y = 80) +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("Carbohydrate", "Lipid", "Modification"), name = "") +
+  NULL
+
+#save plot
+ggsave("fig1.pdf", plot = last_plot(), dpi = 600)
+#ggsave("aa.png", plot = last_plot(), dpi = 300)
+```
+
+##Figure 2
+Goal is to determine how these modifications are distributed; thought it'd be interesting to visualize by average added mass (MA) to a protein, with several small changes in molecular mass, with some very large additions of mass
+```{r}
+ptm %>%
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  ggplot(aes(x = MA, fill = FT)) +
+  geom_dotplot(method = "dotdensity", stackgroups = TRUE, binpositions = "all", binwidth = 20, dotsize = 1.05) + #empircally determined bin width
+  labs(x = "Average Mass Appended (Da)") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("Carbohydrate", "Lipid", "Modification"), name = "")+
+  scale_x_continuous(breaks = c(0,100,200,300,400,500,600,700,800,900,1000), limits = c(0,1000)) +
+  scale_y_continuous(breaks = c(0,10,20,30,40,50,60,70), limits = c(0,70)) + #manually scale y because of geom_dotplot limitations
+  NULL
+
+#save plot
+ggsave("fig2.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
+
+#the reason some average masses (MA) are so abundant is because you find the same modifications across several AAs, thereby weighting some more
+#NB several glycans and lipids are variable masses, and therefore are entered as NA, so not reflected in the graph
+
+ptm %>%
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  count(KW, sort = TRUE)
+
+#would it be more interesting to fill by: amino acid, chemical property of AA (polar, non-polar, etc.), or by key word (KW) of modifiaction? Rather than by "type"?
+```
+##Note (lysine)
+In this code chunk, the goal is to count and summarize lysine modifications.
+```{r}
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Lysine") %>% 
+  count(ID, sort = TRUE)
+```
+
+##Figure 3
+In this figure, the goal is to determine how many acyl-CoA species have been measured
+```{r}
+#Import metabolite data from HMDB (http://www.hmdb.ca/downloads); all metabolites http://www.hmdb.ca/system/downloads/current/hmdb_metabolites.zip
+
+# Parse the XML files
+#proteins_raw <- xmlToDataFrame("data/hmdb_proteins.xml")
+#metabolites_raw <- xmlToDataFrame("data/hmdb_metabolites.xml")
+
+#save (temp) because extracting XML took a long time for a 4GB XML file!
+#save(proteins_raw, file = "proteins_raw.Rda")
+#save(metabolites_raw, file = "metabolites_raw.Rda")
+
+#reload
+#Commented out parsing and saving code, so re-running the entire code fresh will simply load the raw data files as a df
+load("proteins_raw.Rda")
+load("metabolites_raw.Rda")
+```
+
+```{r}
+#as.X
+proteins_raw <- as_tibble(proteins_raw)
+metabolites_raw <- as_tibble(metabolites_raw)
+metabolites_raw$average_molecular_weight <- as.numeric(metabolites_raw$average_molecular_weight)
+
+#clean
+metabolites <- metabolites_raw %>%
+  select(one_of("accession", "name", "average_molecular_weight", "chemical_formula", "smiles", "normal_concentrations")) %>% 
+  clean_names() %>% 
+  remove_empty("rows") 
+
+#junk
+#metabolites$cellular_locations <- str_replace_all(metabolites$cellular_locations, c("Cytoplasm" = "Cytoplasm, ", "Lysosome" = "Lysosome, ", "Endoplasmic reticulum" = "Endoplasmic reticulum, ", "Extracellular" = "Extracellular, ", "Golgi apparatus" = "Golgi apparatus, ", "Membrane" = "Membrane, ", "Mitochondria" = "Mitochondria, ", "Nucleus" = "Nucleus, ", "Peroxisome" = "Peroxisome, ")) #this will allow factors later on (in a list?) for summarization of compartments
+# "cellular_locations", "tissue_locations", "pathways", "wikipidia", "metagene", "protein_associations",
+#metabolites$cellular_locations <- as.factor(metabolites$cellular_locations)
+```
+
+```{r}
+#count CoAs
+CoA <- metabolites %>% 
+  filter(str_detect(name, "CoA")) %>% 
+  mutate(average_molecular_weight_noCoA = round(average_molecular_weight - 767.534, 2)) %>%  #substract weight of CoA for appended mass
+  arrange(average_molecular_weight_noCoA)
+
+CoA <- CoA %>% #number of carbons
+  mutate(carbon_num = str_extract(chemical_formula, "C\\d+")) %>% #extract C then digit, then one or more
+  mutate(carbon_num = str_extract(carbon_num, "\\d+")) %>% #to extract digit only
+  mutate(carbon_num = as.numeric(carbon_num)) %>% #numeric, to do substraction next
+  mutate(carbon_num_acyl = carbon_num - 21) %>% #remove number of carbons in CoA alone, to get acyls
+  slice(-1:-6) %>%  #typos in the dataset
+  arrange(carbon_num_acyl) %>% 
+  mutate (type = "CoA")
+
+CoA <- CoA %>% #number of oxygens
+  mutate(o2_num = str_extract(chemical_formula, "O\\d+")) %>% #extract C then digit, then one or more
+  mutate(o2_num = str_extract(o2_num, "\\d+")) %>% #to extract digit only
+  mutate(o2_num = as.numeric(o2_num)) %>% #numeric, to do substraction next
+  mutate(o2_num_acyl = o2_num - 16) %>% #remove number of oxygens in CoA alone, to get acyls
+  slice(-1) #remove dephosphoCoA
+
+CoA <- CoA %>%
+  separate(smiles, into = c("smiles1", "smiles2"), sep = "S", remove = FALSE, extra = "merge") #split smiles code on the Sulfur(S); needed to split this from the next code chunk, so it runs first; if not, then throws an error that 'smiles1' does not exist (length is zero)
+#https://en.wikipedia.org/wiki/Simplified_molecular-input_line-entry_system
+
+CoA <- CoA %>%
+  mutate(smiles_acyl = if_else(str_detect(smiles1, "P"), smiles2, smiles1)) #this is the code that pulls the 'acyl' from the split smiles data, and discards the CoA, becuase it contains the phosphate; this will allow me to look only at the possible protein appendage.
+
+CoA <- CoA %>%
+  mutate(acyl_description = if_else(str_detect(smiles_acyl, "\\(O\\)\\=O"), "Carboxyl", 
+                                    if_else(str_detect(smiles_acyl, "CO"), "Hydroxyl", 
+                                    if_else(str_detect(smiles_acyl, "C\\(O\\)C"), "Hydroxyl",
+                                    if_else(str_detect(smiles_acyl, "C\\=C"), "Methylene",   
+                                    if_else(str_detect(smiles_acyl, "C\\(\\=C\\)"), "Methylene",  
+                                    if_else(str_detect(smiles_acyl, "C\\=O"), "Aldehyde",  
+                                    if_else(str_detect(smiles_acyl, "C\\(C\\)"), "Branched",        
+                                    if_else(str_detect(smiles_acyl, "CCC"), "Straight", 
+                                        "Other")))))))))
+         
+CoA %>%
+  filter(str_detect(smiles_acyl, "N")) %>% #looking
+  count(smiles_acyl, sort = TRUE)
+
+CoA %>%
+  count(average_molecular_weight, sort = TRUE) #code chunk to count acyl-CoAs, both total and discrete Molecular Weights
+
+ggplot(CoA) +
+  geom_bar(aes(x = carbon_num_acyl, fill = acyl_description)) +
+  #labs(x = "Number of Carbons", title = "Distribution of Carbon Number from Known CoA Species", caption = "Plot by @matthewhirschey | Data from HMDB/@WishartLab") + 
+  labs(x = "Acyl-CoA Carbon Number") +
+  expand_limits(y = 40) +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "Class") +
+  scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20,22,24,26,28), limits = c(0,28)) + 
+  NULL
+
+#save plot
+ggsave("fig3.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
+
+```
+#code chunk to count acyl-phosphates
+```{r}
+phosphate <- metabolites %>% 
+  filter(str_detect(smiles, "C\\(=O\\)OP")) %>% #regex the smiles code for carbonyl-phosphate bond
+  arrange(average_molecular_weight) %>% 
+  mutate (type = "Acyl Phosphate") %>% #duplicate entry!
+  mutate(pre_post = if_else(str_detect(smiles, "C\\(=O\\)OP"), "pre", "post")) %>% 
+  separate(smiles, into = c("pre_smiles", "post_smiles"), sep = "P", remove = FALSE, extra = "merge") %>%  #merge is to prevent discarding data
+  mutate(added_carbons = if_else(grepl("pre", pre_post), str_count(pre_smiles, "C"), str_count(post_smiles, "C")))
+
+phosphate %>%
+  count(average_molecular_weight, sort = TRUE) #code chunk to count acyl-CoAs, both total and discrete Molecular Weights
+
+```
+
+##Note (lysine)
+In this code chunk, the goal is to count and summarize lysine modifications.
+```{r}
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Cysteine") %>% 
+  count(ID, sort = TRUE)
+
+```
+
+#######
+break
+
+
+##Figure 3
+In this figure, the goal is to determine how many reactive [human] metabolites there are and to determine how many are associated with PTMs
+
+
+
+#count thioesters
+```{r}
+thioester <- metabolites %>% 
+  filter(str_detect(smiles, "C\\(=O\\)S") | str_detect(smiles, "SC\\(=O\\)")) %>% #regex the smiles code for thioesters at either orientation
+  arrange(average_molecular_weight) %>% 
+  mutate(type = "Thioester") %>% 
+  mutate(pre_post = if_else(str_detect(smiles, "C\\(=O\\)S"), "pre", "post")) %>% 
+  separate(smiles, into = c("pre_smiles", "post_smiles"), sep = "S", remove = FALSE, extra = "merge" ) %>%  #merge is to prevent discarding data "Expected 2 pieces. Additional pieces discarded in 26 rows"
+  mutate(added_carbons = if_else(grepl("pre", pre_post), str_count(pre_smiles, "C"), str_count(post_smiles, "C")))
+
+#because the smiles code has thioesters with orientations that could add carbon on either sides of the code, the first mutate adds a pre_post column to indicate which side will be added; then the separate will split at the thiol; then the last mutate will count the number of carbons in either the pre or post column, depending.
+
+#these include all from CoA list, except "CoA-"
+#anti_join(CoA, thioester, by = "name")
+#semi_join(CoA, thioester, by = "name") leaves 355, which is one less than in the CoA df
+
+#sum(str_count(thioester$smiles, "C\\(=O\\)S")) #346
+#sum(str_count(thioester$smiles, "SC\\(=O\\)")) #80
+
+#thioester$added_carbons <- as.factor(thioester$added_carbons)
+ggplot(thioester) +
+  geom_bar(aes(added_carbons))
+```
+#Merge thioesters and phosphates
+```{r}
+carbon <- full_join(thioester, phosphate)
+
+#start thinking about how to quanity/overlay (fuzzyjoin?) whether PTM is known
+sum(str_detect(carbon$name, "acetyl|Acetyl")) #this is complicated by ... or could be benefited by the notion that acetyl-mods can come from several types of metabolites
+
+ggplot(carbon) +
+  geom_bar(aes(added_carbons))
+```
+
+```{r}
+proteins <- proteins_raw %>% 
+  select(one_of("accession", "protein_type", "synonyms","gene_name", "general_function", "pathways", "metabolite_associations", "go_classifications", "subcellular_locations", "uniprot_id", "uniprot_name")) %>% 
+  clean_names() %>% 
+  remove_empty("rows") 
+
+```
+
