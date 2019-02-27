@@ -3,5 +3,5 @@
 .RData
 .Ruserdata
 data/hmdb_metabolites.xml
-data/hmdp_proteins.xml
+data/hmdb_proteins.xml
 data/20aa.txt
