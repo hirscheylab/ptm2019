@@ -119,11 +119,11 @@ ggsave("fig1.pdf", plot = last_plot(), dpi = 600)
 
 ##Figure 2
 Goal is to determine how these modifications are distributed; thought it'd be interesting to visualize by average added mass (MA) to a protein, with several small changes in molecular mass, with some very large additions of mass
-```{r}
+```{r fig2}
 ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   ggplot(aes(x = MA, fill = FT)) +
-  geom_dotplot(method = "dotdensity", stackgroups = TRUE, binpositions = "all", binwidth = 20, dotsize = 1.05) + #empircally determined bin width
+  geom_dotplot(method = "dotdensity", stackgroups = TRUE, binpositions = "all", binwidth = 20, dotsize = 1.05) + #empircally determined bin width + dot size ;]
   labs(x = "Average Mass Appended (Da)") +
   scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("Carbohydrate", "Lipid", "Modification"), name = "")+
   scale_x_continuous(breaks = c(0,100,200,300,400,500,600,700,800,900,1000), limits = c(0,1000)) +
@@ -139,9 +139,22 @@ ggsave("fig2.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   count(KW, sort = TRUE)
-
-#would it be more interesting to fill by: amino acid, chemical property of AA (polar, non-polar, etc.), or by key word (KW) of modifiaction? Rather than by "type"?
 ```
+```{r fig2_graveyard, include=FALSE}
+#graveyard
+#would it be more interesting to fill by: amino acid, chemical property of AA (polar, non-polar, etc.), or by key word (KW) of modifiaction? Rather than by "type"?
+ptm %>%
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  ggplot(aes(x = MA, fill = TG)) +
+  geom_dotplot(method = "dotdensity", stackgroups = TRUE, binpositions = "all", binwidth = 20, dotsize = 1.05) + #empircally determined bin width
+  labs(x = "Average Mass Appended (Da)") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "")+
+  scale_x_continuous(breaks = c(0,100,200,300,400,500,600,700,800,900,1000), limits = c(0,1000)) +
+  scale_y_continuous(breaks = c(0,10,20,30,40,50,60,70), limits = c(0,70)) + #manually scale y because of geom_dotplot limitations
+  NULL
+#too many categorical variables: need to fuzzy join AA + AA property (basic, acidic, hydrophobic, etc.) to be useful
+```
+
 ##Note (lysine)
 In this code chunk, the goal is to count and summarize lysine modifications.
 ```{r}
@@ -149,23 +162,34 @@ ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Lysine") %>% 
   count(ID, sort = TRUE)
+
+#code chunk to make a tibble that is easy to view all attributes; no need to save as an object in environment
+#ptm %>% 
+#  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+#  filter(TG == "Lysine") %>% 
+#  arrange(MA) %>% #sorts by mass, low to high
+#  View(title = "lysine")
 ```
 
 ##Figure 3
 In this figure, the goal is to determine how many acyl-CoA species have been measured
-```{r}
-#Import metabolite data from HMDB (http://www.hmdb.ca/downloads); all metabolites http://www.hmdb.ca/system/downloads/current/hmdb_metabolites.zip
+```{r import_HMDB, eval=FALSE, include=FALSE}
+Import metabolite data from HMDB (http://www.hmdb.ca/downloads); all metabolites http://www.hmdb.ca/system/downloads/current/hmdb_metabolites.zip
 
 # Parse the XML files
-#proteins_raw <- xmlToDataFrame("data/hmdb_proteins.xml")
-#metabolites_raw <- xmlToDataFrame("data/hmdb_metabolites.xml")
+proteins_raw <- xmlToDataFrame("data/hmdb_proteins.xml")
+metabolites_raw <- xmlToDataFrame("data/hmdb_metabolites.xml")
 
-#save (temp) because extracting XML took a long time for a 4GB XML file!
-#save(proteins_raw, file = "proteins_raw.Rda")
-#save(metabolites_raw, file = "metabolites_raw.Rda")
+save (temp) because extracting XML took a long time for a 4GB XML file!
+save(proteins_raw, file = "proteins_raw.Rda")
+save(metabolites_raw, file = "metabolites_raw.Rda")
 
+#Commented out parsing and saving code, but then set this code chunk to eval/include = FALSE, so re-running the entire code fresh will simply skip this chunk, and load the raw data files as a df
+
+```
+
+```{r}
 #reload
-#Commented out parsing and saving code, so re-running the entire code fresh will simply load the raw data files as a df
 load("proteins_raw.Rda")
 load("metabolites_raw.Rda")
 ```
@@ -181,11 +205,6 @@ metabolites <- metabolites_raw %>%
   select(one_of("accession", "name", "average_molecular_weight", "chemical_formula", "smiles", "normal_concentrations")) %>% 
   clean_names() %>% 
   remove_empty("rows") 
-
-#junk
-#metabolites$cellular_locations <- str_replace_all(metabolites$cellular_locations, c("Cytoplasm" = "Cytoplasm, ", "Lysosome" = "Lysosome, ", "Endoplasmic reticulum" = "Endoplasmic reticulum, ", "Extracellular" = "Extracellular, ", "Golgi apparatus" = "Golgi apparatus, ", "Membrane" = "Membrane, ", "Mitochondria" = "Mitochondria, ", "Nucleus" = "Nucleus, ", "Peroxisome" = "Peroxisome, ")) #this will allow factors later on (in a list?) for summarization of compartments
-# "cellular_locations", "tissue_locations", "pathways", "wikipidia", "metagene", "protein_associations",
-#metabolites$cellular_locations <- as.factor(metabolites$cellular_locations)
 ```
 
 ```{r}
@@ -265,14 +284,106 @@ phosphate %>%
 
 ```
 
-##Note (lysine)
-In this code chunk, the goal is to count and summarize lysine modifications. Counted 57 (as of Feb 2019), however does not include 3 published modifiations: succination, itaconylation, or s-acetylation, so OK to conclude 60, at least.
+##Note (cysteine)
+In this code chunk, the goal is to count and summarize cysteine modifications. Counted 57 (as of Feb 2019), however does not include 3 published modifiations: succination, 2,3-dicarboxylpropylation (i.e. itaconylation), or s-acetylation, so OK to conclude 60, at least.
 ```{r}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Cysteine") %>% 
   count(ID, sort = TRUE)
 
+#code chunk to make a tibble that is easy to view all attributes; no need to save as an object in environment
+#ptm %>% 
+#  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+#  filter(TG == "Cysteine") %>% 
+#  arrange(MA) %>% #sorts by mass, low to high
+#  View(title = "cysteine")
+
+```
+##Note (serine)
+In this code chunk, the goal is to count and summarize serine modifications. Counted 70 (as of Feb 2019). 
+```{r}
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Serine") %>% 
+  count(ID, sort = TRUE)
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Threonine") %>% 
+  count(ID, sort = TRUE)
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Tyrosine") %>% 
+  count(ID, sort = TRUE)
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Serine") %>% 
+  filter(str_detect(CF, "P")) %>% 
+  count(ID, sort = TRUE)
+#13 serine modifications contain phosphate (12 carbon-phosphate, 1 phosphate only)
+
+#code chunk to make a tibble that is easy to view all attributes; no need to save as an object in environment
+#ptm %>% 
+#  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+#  filter(TG == "Serine") %>% 
+#  arrange(MA) %>% #sorts by mass, low to high
+#  View(title = "serine")
+
+```
+
+##Note (phenylalanine)
+In this code chunk, the goal is to count and summarize phenylalanine modifications. Counted 5 (as of Feb 2019); 1?
+```{r}
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Phenylalanine") %>% 
+  arrange(MA) %>% #sorts by mass, low to high
+  View(title = "phe")
+```
+
+##Note (backbone)
+In this code chunk, the goal is to count and summarize backbone modifications. First look at backbone alone; next look at the part of the protein where these are ascribed; then look at distribution of all backbone modifications on amino acids (glycine is the most); but, these are all n- or c-term modifications; if you look at protien core modifications, these are all serine/threonine/tyrosine and cysteine.
+```{r}
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(str_detect(PA, "backbone")) %>% 
+  arrange(MA) %>% #sorts by mass, low to high
+  View(title = "backbone")
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(str_detect(PA, "backbone")) %>% 
+  count(PA, sort = TRUE)
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(str_detect(PA, "backbone")) %>% 
+  count(PP, sort = TRUE)
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(str_detect(PA, "backbone")) %>% 
+  count(TG, sort = TRUE)
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(str_detect(PA, "backbone")) %>% 
+  filter(TG == "Glycine")
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(str_detect(PA, "backbone")) %>% 
+  filter(str_detect(PP, "core")) %>% 
+  count(TG, sort = TRUE)
+
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(str_detect(PA, "backbone")) %>% 
+  filter(str_detect(PP, "core")) %>% 
+  arrange(TG)
 ```
 
 #######
@@ -324,5 +435,11 @@ proteins <- proteins_raw %>%
   clean_names() %>% 
   remove_empty("rows") 
 
+```
+##Save final files
+Code chunk to save files
+```{r}
+write_delim(ptm, "ptm.csv", delim = ",", na = "")
+write_delim(metabolites, "metabolites.csv", delim = ",", na = "")
 ```
 
