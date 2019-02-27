@@ -32,7 +32,7 @@ Overall goal is to quanitfy known landscape of protein amino acids. Chose to get
 ```{r}
 ptm_raw <- read_tsv("https://www.uniprot.org/docs/ptmlist.txt", col_names = FALSE, skip = 48) #skip 48 first lines which contain data file dictionary
 
-#URL points to a datafile, to increase reproducibility; datafile is also saved and downloaded 12/21/2018 in working directory in case URL link breaks
+#URL points to a datafile, to increase reproducibility; datafile is also downloaded 12/21/2018 and saved in working data directory in case URL link breaks
 
 #make working df
 ptm <- ptm_raw %>% 
@@ -113,8 +113,8 @@ ptm %>%
   NULL
 
 #save plot
-ggsave("fig1.pdf", plot = last_plot(), dpi = 600)
-#ggsave("aa.png", plot = last_plot(), dpi = 300)
+ggsave("output/fig1.pdf", plot = last_plot(), dpi = 600)
+#ggsave("output/aa.png", plot = last_plot(), dpi = 300)
 ```
 
 ##Figure 2
@@ -131,7 +131,7 @@ ptm %>%
   NULL
 
 #save plot
-ggsave("fig2.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
+ggsave("output/fig2.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 
 #the reason some average masses (MA) are so abundant is because you find the same modifications across several AAs, thereby weighting some more
 #NB several glycans and lipids are variable masses, and therefore are entered as NA, so not reflected in the graph
@@ -164,11 +164,11 @@ ptm %>%
   count(ID, sort = TRUE)
 
 #code chunk to make a tibble that is easy to view all attributes; no need to save as an object in environment
-#ptm %>% 
-#  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
-#  filter(TG == "Lysine") %>% 
-#  arrange(MA) %>% #sorts by mass, low to high
-#  View(title = "lysine")
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Lysine") %>% 
+  arrange(MA) %>% #sorts by mass, low to high
+  View(title = "lysine")
 ```
 
 ##Figure 3
@@ -181,17 +181,17 @@ proteins_raw <- xmlToDataFrame("data/hmdb_proteins.xml")
 metabolites_raw <- xmlToDataFrame("data/hmdb_metabolites.xml")
 
 save (temp) because extracting XML took a long time for a 4GB XML file!
-save(proteins_raw, file = "proteins_raw.Rda")
-save(metabolites_raw, file = "metabolites_raw.Rda")
+save(proteins_raw, file = "data/proteins_raw.Rda")
+save(metabolites_raw, file = "data/metabolites_raw.Rda")
 
-#Commented out parsing and saving code, but then set this code chunk to eval/include = FALSE, so re-running the entire code fresh will simply skip this chunk, and load the raw data files as a df
+#Commented out parsing and saving code, but then set this code chunk to eval/include = FALSE, so re-running the entire code fresh will simply skip this chunk, and load the raw data files in the next chunk as a df
 
 ```
 
 ```{r}
 #reload
-load("proteins_raw.Rda")
-load("metabolites_raw.Rda")
+load("data/proteins_raw.Rda")
+load("data/metabolites_raw.Rda")
 ```
 
 ```{r}
@@ -265,7 +265,7 @@ ggplot(CoA) +
   NULL
 
 #save plot
-ggsave("fig3.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
+ggsave("output/fig3.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 
 ```
 #Note (acyl-phosphates)
@@ -293,11 +293,11 @@ ptm %>%
   count(ID, sort = TRUE)
 
 #code chunk to make a tibble that is easy to view all attributes; no need to save as an object in environment
-#ptm %>% 
-#  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
-#  filter(TG == "Cysteine") %>% 
-#  arrange(MA) %>% #sorts by mass, low to high
-#  View(title = "cysteine")
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Cysteine") %>% 
+  arrange(MA) %>% #sorts by mass, low to high
+  View(title = "cysteine")
 
 ```
 ##Note (serine)
@@ -326,11 +326,11 @@ ptm %>%
 #13 serine modifications contain phosphate (12 carbon-phosphate, 1 phosphate only)
 
 #code chunk to make a tibble that is easy to view all attributes; no need to save as an object in environment
-#ptm %>% 
-#  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
-#  filter(TG == "Serine") %>% 
-#  arrange(MA) %>% #sorts by mass, low to high
-#  View(title = "serine")
+ptm %>% 
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  filter(TG == "Serine") %>% 
+  arrange(MA) %>% #sorts by mass, low to high
+  View(title = "serine")
 
 ```
 
@@ -388,15 +388,25 @@ ptm %>%
 
 #######
 break
-
-
-##Figure 3
-In this figure, the goal is to determine how many reactive [human] metabolites there are and to determine how many are associated with PTMs
-
-
-
-#count thioesters
+##Figure 4
+The goal in this figure is to build a network diagram of metabolites and proteins, and then determine (count?) how many reactive species are a nodes. This might be a way to look at connectedness of metabolites, and ask if reactive metabolites are more or less connected than non-reactive ones. To do this, I need a list of nodes (metabolites) and a list of edges (proteins), and the relationship between them.
 ```{r}
+proteins <- proteins_raw %>%  #recall this dataset is from HMDB
+  select(one_of("accession", "protein_type", "synonyms","gene_name", "general_function", "pathways", "metabolite_associations", "go_classifications", "subcellular_locations", "uniprot_id", "uniprot_name")) %>% 
+  clean_names() %>% 
+  remove_empty("rows") 
+
+```
+
+```{r}
+
+```
+
+
+##Figure 5
+In this figure, the goal is to determine how many reactive [human] metabolites there are and to determine how many are associated with PTMs
+```{r}
+#count thioesters
 thioester <- metabolites %>% 
   filter(str_detect(smiles, "C\\(=O\\)S") | str_detect(smiles, "SC\\(=O\\)")) %>% #regex the smiles code for thioesters at either orientation
   arrange(average_molecular_weight) %>% 
@@ -429,17 +439,11 @@ ggplot(carbon) +
   geom_bar(aes(added_carbons))
 ```
 
-```{r}
-proteins <- proteins_raw %>% 
-  select(one_of("accession", "protein_type", "synonyms","gene_name", "general_function", "pathways", "metabolite_associations", "go_classifications", "subcellular_locations", "uniprot_id", "uniprot_name")) %>% 
-  clean_names() %>% 
-  remove_empty("rows") 
 
-```
 ##Save final files
 Code chunk to save files
 ```{r}
-write_delim(ptm, "ptm.csv", delim = ",", na = "")
-write_delim(metabolites, "metabolites.csv", delim = ",", na = "")
+write_delim(ptm, "output/ptm.csv", delim = ",", na = "")
+write_delim(metabolites, "output/metabolites.csv", delim = ",", na = "")
 ```
 
