@@ -1,7 +1,7 @@
 # NCB2019
 
-This is a code repository for accompanying the invited review on reactive activate carbon species, protein modifications, and carbon stress for NCB. Here you will find: 
-1. The R Markdown file: When you execute code within the notebook, the results appear beneath.
-2. The data directory: this contains the raw data for executing the code
-3. The output directory: this contains the figures and .csv files from code execution
+This is a code repository for accompanying the invited review on reactive activated carbon species, protein modifications, and carbon stress for NCB. Here you will find: 
+1. The code: When you execute the code within the R Markdown file called ptm.Rmd, the results appear beneath.
+2. The R project file: this small file contains the settings for the project
+3. The data directory: this dir the raw data for executing the code. See notes with the Rmd for more details.
 

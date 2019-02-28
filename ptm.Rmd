@@ -16,6 +16,8 @@ library(tidyverse)
 library(janitor)
 library(viridis)
 library(XML)
+library(igraph)
+library(ggraph)
 
 #clear environment
 rm(list=ls()) 
@@ -391,10 +393,30 @@ break
 ##Figure 4
 The goal in this figure is to build a network diagram of metabolites and proteins, and then determine (count?) how many reactive species are a nodes. This might be a way to look at connectedness of metabolites, and ask if reactive metabolites are more or less connected than non-reactive ones. To do this, I need a list of nodes (metabolites) and a list of edges (proteins), and the relationship between them.
 ```{r}
-proteins <- proteins_raw %>%  #recall this dataset is from HMDB
-  select(one_of("accession", "protein_type", "synonyms","gene_name", "general_function", "pathways", "metabolite_associations", "go_classifications", "subcellular_locations", "uniprot_id", "uniprot_name")) %>% 
+protein_network <- proteins_raw %>%  #recall this dataset is from HMDB
+  select(one_of("accession","gene_name", "metabolite_associations")) %>% 
   clean_names() %>% 
-  remove_empty("rows") 
+  remove_empty("rows") %>% 
+  rename(accession_protein = accession)
+
+protein_network$accession_protein <- as.character(protein_network$accession_protein)
+protein_network$gene_name <- as.character(protein_network$gene_name)
+protein_network$metabolite_associations <- as.character(protein_network$metabolite_associations)
+
+#temp code to work with small dp
+protein_network <- protein_network %>% 
+  slice(1:20)
+
+protein_network <- protein_network %>% 
+  mutate(accession = str_match_all(protein_network$metabolite_associations, "HMDB\\d{7}")) %>% 
+  unnest()  %>% #converts list vector (list of chr strings) from match_all fxn to a chr vector, with protein permuted across each metabolite.
+  select(-metabolite_associations)
+
+protein_network <- protein_network %>% 
+  left_join(metabolites, by = "accession") %>% 
+  rename(accession_metabolite = accession) %>% 
+  rename(metabolite_name = name) %>% 
+  select(c("accession_protein", "gene_name", "accession_metabolite", "metabolite_name"))
 
 ```
 
