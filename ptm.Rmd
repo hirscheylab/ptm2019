@@ -16,6 +16,8 @@ library(tidyverse)
 library(janitor)
 library(viridis)
 library(XML)
+library(data.table)
+library(fuzzyjoin)
 library(igraph)
 library(ggraph)
 
@@ -393,37 +395,106 @@ break
 ##Figure 4
 The goal in this figure is to build a network diagram of metabolites and proteins, and then determine (count?) how many reactive species are a nodes. This might be a way to look at connectedness of metabolites, and ask if reactive metabolites are more or less connected than non-reactive ones. To do this, I need a list of nodes (metabolites) and a list of edges (proteins), and the relationship between them.
 ```{r}
-protein_network <- proteins_raw %>%  #recall this dataset is from HMDB
-  select(one_of("accession","gene_name", "metabolite_associations")) %>% 
-  clean_names() %>% 
-  remove_empty("rows") %>% 
-  rename(accession_protein = accession)
+#uncomment this next line of code
+kegg_reaction_raw <- fread('http://rest.kegg.jp/list/reaction', header = FALSE, col.names = c("rid", "reaction"))
 
-protein_network$accession_protein <- as.character(protein_network$accession_protein)
-protein_network$gene_name <- as.character(protein_network$gene_name)
-protein_network$metabolite_associations <- as.character(protein_network$metabolite_associations)
+reaction <- kegg_reaction_raw %>% 
+  separate("reaction", c("k1","k2","k3", "kegg_reaction_defn"), sep = ";", fill = "left") %>% #no more than 4 commas, so separates into 4 columns, and fills left, which is key to put all reaction equations into far right column
+  replace_na(list(k1 = "", k2 = "", k3 = "")) %>% #drops NAs for next 'unite' step, which is essentially paste
+  unite("kegg_reaction_name", c("k1","k2","k3"), sep = ",", remove = TRUE) #unites temp k1-k3 columns, adds commas, and removes temp columns
 
-#temp code to work with small dp
-protein_network <- protein_network %>% 
-  slice(1:20)
+reaction$kegg_reaction_name <- str_replace_all(reaction$kegg_reaction_name, "^,{1,3}", "") #string replace to get rid of preceeding(^) commas, selecting between 1-3 {1,3}
 
-protein_network <- protein_network %>% 
-  mutate(accession = str_match_all(protein_network$metabolite_associations, "HMDB\\d{7}")) %>% 
-  unnest()  %>% #converts list vector (list of chr strings) from match_all fxn to a chr vector, with protein permuted across each metabolite.
-  select(-metabolite_associations)
+#split equations, then separate_rows to fill/permute
+reaction <- reaction %>% 
+  separate(kegg_reaction_defn, sep = "<=>", into = c("reactant", "product")) %>% 
+  separate_rows(reactant, sep = " \\+ ") %>% 
+  separate_rows(product, sep = " \\+ ")
 
-protein_network <- protein_network %>% 
-  left_join(metabolites, by = "accession") %>% 
-  rename(accession_metabolite = accession) %>% 
-  rename(metabolite_name = name) %>% 
-  select(c("accession_protein", "gene_name", "accession_metabolite", "metabolite_name"))
+#need this step so the regex for "n " doesn't trim metabolites
+reaction$product <- trimws(reaction$product, which = "both") 
+reaction$reactant <- trimws(reaction$reactant, which = "both")
 
+#remove balance equation numbers
+reaction$product <- str_remove(reaction$product, "\\d+ ")
+reaction$reactant <- str_remove(reaction$reactant, "\\d+ ")
+reaction$product <- str_remove(reaction$product, "^n ") #start of string
+reaction$reactant <- str_remove(reaction$reactant, "^n ") #start of string
 ```
 
 ```{r}
+#temp code to work with small df for testing
+#reaction <- slice(reaction, 1:100)
 
+omit <- NA #code to replace commented out code below
+#omit <- c("H2O", "Oxygen", "CO2", "H+", "Acceptor", "e-", "ATP", "ADP", "AMP", "Orthophosphate", "Diphosphate", "NAD+", "NADH", "NADP+", "NADPH", "CoA", "Ammonia", "UDP", "UTP", "UMP", "Hydrogen Peroxide", "Hydrogen peroxide", "Reduced acceptor", "CTP", "CDP", "CMP", "GDP", "GTP", "GMP", "FADH2", "FADH", "FAD", "S-Adenosyl-L-methionine", "S-Adenosyl-L-homocysteine", "[Reduced NADPH---hemoprotein reductase]", "[Oxidized NADPH---hemoprotein reductase]", "Reduced ferredoxin", "Oxidized ferredoxin", "UDP-glucose") 
+
+#messy and biased. Need a way to look at carbon, or specific reactive bonds (append smiles data)? Or a better way to simplify?
+
+#set-up df for network
+node <- reaction %>% 
+  select("reactant") %>% 
+  rename(name = reactant)
+
+node_temp <- reaction %>% 
+  select("product") %>% 
+  rename(name = product)
+
+node <- bind_rows(node, node_temp) %>% 
+  unique() %>% 
+  select(name) %>% 
+  filter(!(name %in% omit))
+
+edge <- reaction %>% 
+  rename(from = product) %>% 
+  filter(!(from %in% omit)) %>% 
+  rename(to = reactant) %>% 
+  filter(!(to %in% omit)) %>% 
+  rename(edge_name = kegg_reaction_name) %>% 
+  select(c("from", "to", "edge_name")) #eventually edge_name can be an edge attribute?
+
+
+g <- graph_from_data_frame(edge, directed = FALSE, vertices = node)
+g$name <- "Metabolic Network" #give network a name
+V(g) # Explore the set of nodes/vertices
+E(g) # Explore the set of ties/edges
+
+#first graph: super messy, but then can add measures to it
+ggraph(g, layout = "auto") +
+  geom_edge_link(aes()) + 
+  geom_node_point() +
+  theme_void()
+
+#add centrality measures to nodes
+node <- node %>% 
+  mutate(degree = degree(g)) %>% #The degree of a vertex is the number of its adjacent edges.
+  mutate(strength = strength(g)) %>% #Summing up the edge weights of the adjacent edges for each vertex (same as degree, if not weighted)
+  mutate(betweenness = betweenness(g)) %>% #quantifies how often a node lies on the shortest path between other nodes
+  mutate(closeness = closeness(g)) %>% # how close a node is to all other nodes in the network in terms of shortest path distance
+  arrange(desc(degree))
+
+ggplot(node) +
+  geom_point(aes(x = degree, y = betweenness)) +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(x = "Strength of Node (# connections)", y = "Betweenness (shortest path)") +
+  #scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "Class") +
+  NULL
 ```
 
+```{r}
+#second graph 
+
+
+g <- graph_from_data_frame(edge, directed = TRUE, vertices = node)
+ggraph(g, layout = "auto") +
+  geom_edge_link(aes()) + 
+  geom_node_point(aes(size = degree)) +
+  #geom_node_text(aes(label = name), label.size = 0.01, repel = TRUE) +
+  theme_void() + 
+  NULL
+
+```
 
 ##Figure 5
 In this figure, the goal is to determine how many reactive [human] metabolites there are and to determine how many are associated with PTMs
@@ -469,3 +540,77 @@ write_delim(ptm, "output/ptm.csv", delim = ",", na = "")
 write_delim(metabolites, "output/metabolites.csv", delim = ",", na = "")
 ```
 
+#graveyard
+```{r}
+protein_network <- proteins_raw %>%  #recall this dataset is from HMDB
+  select(one_of("accession","gene_name", "metabolite_associations")) %>% 
+  clean_names() %>% 
+  remove_empty("rows") %>% 
+  rename(accession_protein = accession)
+
+protein_network$accession_protein <- as.character(protein_network$accession_protein)
+protein_network$gene_name <- as.character(protein_network$gene_name)
+protein_network$metabolite_associations <- as.character(protein_network$metabolite_associations)
+
+#temp code to work with small dp
+protein_network <- protein_network %>% 
+  slice(1:20)
+
+protein_network <- protein_network %>% 
+  mutate(accession = str_match_all(protein_network$metabolite_associations, "HMDB\\d{7}")) %>% 
+  unnest()  %>% #converts list vector (list of chr strings) from match_all fxn to a chr vector, with protein permuted across each metabolite.
+  select(-metabolite_associations)
+
+protein_network <- protein_network %>% 
+  left_join(metabolites, by = "accession") %>% 
+  rename(accession_metabolite = accession) %>% 
+  rename(metabolite_name = name) %>% 
+  select(c("accession_protein", "gene_name", "accession_metabolite", "metabolite_name"))
+
+##graveyard becuase protein_network cannot be used for network; it has list of associations between a protein and metabolites, but not pairs; therefore permuting all possible combinations would lead to false links/edges between metabolites. 
+```
+```{r}
+#above graph necessitates some sort of filtering, but need to get chemical data appended to Kegg before filtering
+
+#link compounds to pubchemID
+#compounds_raw <- fread('http://rest.kegg.jp/list/compound/', header = FALSE, col.names = c("cid", "compounds")) #list of compounds
+
+#pubchem_raw <- fread('http://rest.kegg.jp/conv/compound/pubchem', header = FALSE, col.names = c("pubchem_id", "cid")) #list of compounds
+
+pubchem_raw$cid <- str_remove(pubchem_raw$cid, "cpd\\:")
+pubchem_raw$pubchem_id <- str_remove(pubchem_raw$pubchem_id, "pubchem\\:")
+compounds_raw$cid <- str_remove(compounds_raw$cid, "cpd\\:")
+
+#node <- left_join(node, metabolites, by = "name") #this doens't work; need fuzzy joing
+#for fuzzyjoin, you need 2 vectors: one master, and one all-other-options, so made that here.
+compounds <- compounds_raw %>% 
+  separate(compounds, into = c("first_compound","compounds"), sep = ";", remove = FALSE) %>% #don't worry about split into or drops, because this will be rejoined with master list; just need id for each metabolite
+  select(-compounds) %>% 
+  left_join(pubchem_raw, by = "cid") %>% 
+  left_join(compounds_raw, by ="cid") %>% 
+  select(c("cid", "pubchem_id", "first_compound", "compounds"))
+
+compounds$compounds <- str_replace_all(compounds$compounds, "\\; ", "|") #give the regex an "or"
+compounds$compounds <- str_remove_all(compounds$compounds, "'") #remove '
+
+
+#temp code to work with small dp
+#compounds <- slice(compounds, 1:40)
+
+#test fuzzyjoin
+node <- node %>% 
+  regex_left_join(compounds, by = c(name = "compounds"))
+
+
+
+#Write fxn to get SMILES
+URL <- c("https://cactus.nci.nih.gov/chemical/structure/")
+x <- "C01118"
+
+y <- paste(URL, x, "/smiles", sep = "")
+z <- fread(y)
+output is dataframe with x and z
+  
+##graveyard because 
+
+```
