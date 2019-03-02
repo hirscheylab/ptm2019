@@ -2,7 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
+.DS_Store
 ptm_graveyard.Rmd
+ptm_graveyard.nb.html
+ptm.nb.html
 data/hmdb_metabolites.xml
 data/hmdb_proteins.xml
 data/20aa.txt
+output/

@@ -459,7 +459,7 @@ g$name <- "Metabolic Network" #give network a name
 V(g) # Explore the set of nodes/vertices
 E(g) # Explore the set of ties/edges
 
-#first graph: super messy, but then can add measures to it
+#first graph: super messy, but then can add measures from g
 ggraph(g, layout = "auto") +
   geom_edge_link(aes()) + 
   geom_node_point() +
@@ -473,19 +473,29 @@ node <- node %>%
   mutate(closeness = closeness(g)) %>% # how close a node is to all other nodes in the network in terms of shortest path distance
   arrange(desc(degree))
 
+node <- node %>% 
+  mutate(CoA = str_detect(name, "CoA"))
+
+#assess distribution of degree & betweenness
 ggplot(node) +
-  geom_point(aes(x = degree, y = betweenness)) +
+  geom_point(aes(x = degree, y = betweenness, color = CoA)) +
   scale_x_log10() +
   scale_y_log10() +
   labs(x = "Strength of Node (# connections)", y = "Betweenness (shortest path)") +
-  #scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "Class") +
+  scale_color_viridis(discrete = TRUE, direction = -1, option = "viridis", alpha = 0.5) +
   NULL
+
+#assess distribution of acyl-CoA degree
+ggplot(node) +
+  geom_histogram(aes(x = log10(degree), fill = CoA)) +
+  labs(x = "Strength of Node (# connections)") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("1", "10", "100", "1000")) +
+  NULL
+
 ```
 
 ```{r}
 #second graph 
-
-
 g <- graph_from_data_frame(edge, directed = TRUE, vertices = node)
 ggraph(g, layout = "auto") +
   geom_edge_link(aes()) + 
@@ -538,79 +548,4 @@ Code chunk to save files
 ```{r}
 write_delim(ptm, "output/ptm.csv", delim = ",", na = "")
 write_delim(metabolites, "output/metabolites.csv", delim = ",", na = "")
-```
-
-#graveyard
-```{r}
-protein_network <- proteins_raw %>%  #recall this dataset is from HMDB
-  select(one_of("accession","gene_name", "metabolite_associations")) %>% 
-  clean_names() %>% 
-  remove_empty("rows") %>% 
-  rename(accession_protein = accession)
-
-protein_network$accession_protein <- as.character(protein_network$accession_protein)
-protein_network$gene_name <- as.character(protein_network$gene_name)
-protein_network$metabolite_associations <- as.character(protein_network$metabolite_associations)
-
-#temp code to work with small dp
-protein_network <- protein_network %>% 
-  slice(1:20)
-
-protein_network <- protein_network %>% 
-  mutate(accession = str_match_all(protein_network$metabolite_associations, "HMDB\\d{7}")) %>% 
-  unnest()  %>% #converts list vector (list of chr strings) from match_all fxn to a chr vector, with protein permuted across each metabolite.
-  select(-metabolite_associations)
-
-protein_network <- protein_network %>% 
-  left_join(metabolites, by = "accession") %>% 
-  rename(accession_metabolite = accession) %>% 
-  rename(metabolite_name = name) %>% 
-  select(c("accession_protein", "gene_name", "accession_metabolite", "metabolite_name"))
-
-##graveyard becuase protein_network cannot be used for network; it has list of associations between a protein and metabolites, but not pairs; therefore permuting all possible combinations would lead to false links/edges between metabolites. 
-```
-```{r}
-#above graph necessitates some sort of filtering, but need to get chemical data appended to Kegg before filtering
-
-#link compounds to pubchemID
-#compounds_raw <- fread('http://rest.kegg.jp/list/compound/', header = FALSE, col.names = c("cid", "compounds")) #list of compounds
-
-#pubchem_raw <- fread('http://rest.kegg.jp/conv/compound/pubchem', header = FALSE, col.names = c("pubchem_id", "cid")) #list of compounds
-
-pubchem_raw$cid <- str_remove(pubchem_raw$cid, "cpd\\:")
-pubchem_raw$pubchem_id <- str_remove(pubchem_raw$pubchem_id, "pubchem\\:")
-compounds_raw$cid <- str_remove(compounds_raw$cid, "cpd\\:")
-
-#node <- left_join(node, metabolites, by = "name") #this doens't work; need fuzzy joing
-#for fuzzyjoin, you need 2 vectors: one master, and one all-other-options, so made that here.
-compounds <- compounds_raw %>% 
-  separate(compounds, into = c("first_compound","compounds"), sep = ";", remove = FALSE) %>% #don't worry about split into or drops, because this will be rejoined with master list; just need id for each metabolite
-  select(-compounds) %>% 
-  left_join(pubchem_raw, by = "cid") %>% 
-  left_join(compounds_raw, by ="cid") %>% 
-  select(c("cid", "pubchem_id", "first_compound", "compounds"))
-
-compounds$compounds <- str_replace_all(compounds$compounds, "\\; ", "|") #give the regex an "or"
-compounds$compounds <- str_remove_all(compounds$compounds, "'") #remove '
-
-
-#temp code to work with small dp
-#compounds <- slice(compounds, 1:40)
-
-#test fuzzyjoin
-node <- node %>% 
-  regex_left_join(compounds, by = c(name = "compounds"))
-
-
-
-#Write fxn to get SMILES
-URL <- c("https://cactus.nci.nih.gov/chemical/structure/")
-x <- "C01118"
-
-y <- paste(URL, x, "/smiles", sep = "")
-z <- fread(y)
-output is dataframe with x and z
-  
-##graveyard because 
-
 ```
