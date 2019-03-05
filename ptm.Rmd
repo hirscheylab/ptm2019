@@ -159,7 +159,7 @@ ptm %>%
 #too many categorical variables: need to fuzzy join AA + AA property (basic, acidic, hydrophobic, etc.) to be useful
 ```
 
-##Note (lysine)
+###Note (lysine)
 In this code chunk, the goal is to count and summarize lysine modifications.
 ```{r}
 ptm %>% 
@@ -171,8 +171,7 @@ ptm %>%
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Lysine") %>% 
-  arrange(MA) %>% #sorts by mass, low to high
-  View(title = "lysine")
+  arrange(MA) #sorts by mass, low to high
 ```
 
 ##Figure 3
@@ -261,7 +260,6 @@ CoA %>%
 
 ggplot(CoA) +
   geom_bar(aes(x = carbon_num_acyl, fill = acyl_description)) +
-  #labs(x = "Number of Carbons", title = "Distribution of Carbon Number from Known CoA Species", caption = "Plot by @matthewhirschey | Data from HMDB/@WishartLab") + 
   labs(x = "Acyl-CoA Carbon Number") +
   expand_limits(y = 40) +
   scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "Class") +
@@ -272,7 +270,7 @@ ggplot(CoA) +
 ggsave("output/fig3.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 
 ```
-#Note (acyl-phosphates)
+###Note (acyl-phosphates)
 Code chunk to count acyl-phosphates. 10 total counted, although strangely two are listed at 266 Da. Same or different?
 ```{r}
 phosphate <- metabolites %>% 
@@ -288,7 +286,7 @@ phosphate %>%
 
 ```
 
-##Note (cysteine)
+###Note (cysteine)
 In this code chunk, the goal is to count and summarize cysteine modifications. Counted 57 (as of Feb 2019), however does not include 3 published modifiations: succination, 2,3-dicarboxylpropylation (i.e. itaconylation), or s-acetylation, so OK to conclude 60, at least.
 ```{r}
 ptm %>% 
@@ -300,11 +298,9 @@ ptm %>%
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Cysteine") %>% 
-  arrange(MA) %>% #sorts by mass, low to high
-  View(title = "cysteine")
-
+  arrange(MA) #sorts by mass, low to high
 ```
-##Note (serine)
+###Note (serine)
 In this code chunk, the goal is to count and summarize serine modifications. Counted 70 (as of Feb 2019). 
 ```{r}
 ptm %>% 
@@ -333,29 +329,25 @@ ptm %>%
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Serine") %>% 
-  arrange(MA) %>% #sorts by mass, low to high
-  View(title = "serine")
-
+  arrange(MA) #sorts by mass, low to high
 ```
 
-##Note (phenylalanine)
+###Note (phenylalanine)
 In this code chunk, the goal is to count and summarize phenylalanine modifications. Counted 5 (as of Feb 2019); 1?
 ```{r}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Phenylalanine") %>% 
-  arrange(MA) %>% #sorts by mass, low to high
-  View(title = "phe")
+  arrange(MA) #sorts by mass, low to high
 ```
 
-##Note (backbone)
+###Note (backbone)
 In this code chunk, the goal is to count and summarize backbone modifications. First look at backbone alone; next look at the part of the protein where these are ascribed; then look at distribution of all backbone modifications on amino acids (glycine is the most); but, these are all n- or c-term modifications; if you look at protien core modifications, these are all serine/threonine/tyrosine and cysteine.
 ```{r}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(str_detect(PA, "backbone")) %>% 
-  arrange(MA) %>% #sorts by mass, low to high
-  View(title = "backbone")
+  arrange(MA) #sorts by mass, low to high
 
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
@@ -390,20 +382,36 @@ ptm %>%
   arrange(TG)
 ```
 
-#######
-break
 ##Figure 4
 The goal in this figure is to build a network diagram of metabolites and proteins, and then determine (count?) how many reactive species are a nodes. This might be a way to look at connectedness of metabolites, and ask if reactive metabolites are more or less connected than non-reactive ones. To do this, I need a list of nodes (metabolites) and a list of edges (proteins), and the relationship between them.
 ```{r}
-#uncomment this next line of code
+#to restart network analysis, uncomment this next line of code
+#rm(reaction, node, link, link_group, edge)
 kegg_reaction_raw <- fread('http://rest.kegg.jp/list/reaction', header = FALSE, col.names = c("rid", "reaction"))
+link <- fread('http://rest.kegg.jp/link/ko/reaction', header = FALSE, col.names = c("rid", "kid"))
 
 reaction <- kegg_reaction_raw %>% 
   separate("reaction", c("k1","k2","k3", "kegg_reaction_defn"), sep = ";", fill = "left") %>% #no more than 4 commas, so separates into 4 columns, and fills left, which is key to put all reaction equations into far right column
   replace_na(list(k1 = "", k2 = "", k3 = "")) %>% #drops NAs for next 'unite' step, which is essentially paste
   unite("kegg_reaction_name", c("k1","k2","k3"), sep = ",", remove = TRUE) #unites temp k1-k3 columns, adds commas, and removes temp columns
-
+  
 reaction$kegg_reaction_name <- str_replace_all(reaction$kegg_reaction_name, "^,{1,3}", "") #string replace to get rid of preceeding(^) commas, selecting between 1-3 {1,3}
+
+link_group <- link %>% #generate an object to left-join that counts the number of kids (KO kegg ids) with a single reaction (rid); this will be used to weight
+  group_by(kid) %>%  
+  summarize (weight = n())
+
+link <- link %>% #this gives me number of times a reaction id is associated with a gene (to be weighted more)
+  left_join(link_group, by = "kid")
+
+reaction <- reaction %>% 
+  left_join(link, by = "rid") 
+
+reaction$weight <- reaction$weight %>% replace_na(0)
+
+reaction <- reaction %>% 
+  select(-kid) %>% 
+  mutate(weight = weight + 1) #gives weights a minimum of 1
 
 #split equations, then separate_rows to fill/permute
 reaction <- reaction %>% 
@@ -423,8 +431,8 @@ reaction$reactant <- str_remove(reaction$reactant, "^n ") #start of string
 ```
 
 ```{r}
-#temp code to work with small df for testing
-#reaction <- slice(reaction, 1:100)
+#temp code to work with small df for testing; uncomment for test runs
+#reaction <- slice(reaction, 1:1000)
 
 omit <- NA #code to replace commented out code below
 #omit <- c("H2O", "Oxygen", "CO2", "H+", "Acceptor", "e-", "ATP", "ADP", "AMP", "Orthophosphate", "Diphosphate", "NAD+", "NADH", "NADP+", "NADPH", "CoA", "Ammonia", "UDP", "UTP", "UMP", "Hydrogen Peroxide", "Hydrogen peroxide", "Reduced acceptor", "CTP", "CDP", "CMP", "GDP", "GTP", "GMP", "FADH2", "FADH", "FAD", "S-Adenosyl-L-methionine", "S-Adenosyl-L-homocysteine", "[Reduced NADPH---hemoprotein reductase]", "[Oxidized NADPH---hemoprotein reductase]", "Reduced ferredoxin", "Oxidized ferredoxin", "UDP-glucose") 
@@ -442,8 +450,9 @@ node_temp <- reaction %>%
 
 node <- bind_rows(node, node_temp) %>% 
   unique() %>% 
-  select(name) %>% 
   filter(!(name %in% omit))
+
+rm(node_temp) #remove temp object
 
 edge <- reaction %>% 
   rename(from = product) %>% 
@@ -451,17 +460,17 @@ edge <- reaction %>%
   rename(to = reactant) %>% 
   filter(!(to %in% omit)) %>% 
   rename(edge_name = kegg_reaction_name) %>% 
-  select(c("from", "to", "edge_name")) #eventually edge_name can be an edge attribute?
-
+  select(c("from", "to", "weight")) #eventually edge_name can be an edge attribute?
 
 g <- graph_from_data_frame(edge, directed = FALSE, vertices = node)
 g$name <- "Metabolic Network" #give network a name
 V(g) # Explore the set of nodes/vertices
 E(g) # Explore the set of ties/edges
 
+
 #first graph: super messy, but then can add measures from g
-ggraph(g, layout = "auto") +
-  geom_edge_link(aes()) + 
+ggraph(g, layout = "auto") + #"linear", circular = TRUE
+  geom_edge_link(aes(alpha = weight)) + 
   geom_node_point() +
   theme_void()
 
@@ -469,40 +478,118 @@ ggraph(g, layout = "auto") +
 node <- node %>% 
   mutate(degree = degree(g)) %>% #The degree of a vertex is the number of its adjacent edges.
   mutate(strength = strength(g)) %>% #Summing up the edge weights of the adjacent edges for each vertex (same as degree, if not weighted)
-  mutate(betweenness = betweenness(g)) %>% #quantifies how often a node lies on the shortest path between other nodes
+  mutate(betweenness = betweenness(g)) %>% #quantifies how often a node lies on the shortest path between other nodes (measure of ties)
   mutate(closeness = closeness(g)) %>% # how close a node is to all other nodes in the network in terms of shortest path distance
   arrange(desc(degree))
 
-node <- node %>% 
+node <- node %>% #where my CoAs at?
   mutate(CoA = str_detect(name, "CoA"))
 
-#assess distribution of degree & betweenness
+#assess distribution of degree & betweenness; color by CoAs
 ggplot(node) +
-  geom_point(aes(x = degree, y = betweenness, color = CoA)) +
+  geom_point(aes(x = degree, y = strength, color = CoA)) +
   scale_x_log10() +
   scale_y_log10() +
-  labs(x = "Strength of Node (# connections)", y = "Betweenness (shortest path)") +
+  labs(x = "Degree of Node (# connections)", y = "Strength (weighted degree)") +
   scale_color_viridis(discrete = TRUE, direction = -1, option = "viridis", alpha = 0.5) +
   NULL
 
-#assess distribution of acyl-CoA degree
+node %>% filter(CoA == TRUE) #look at acyl-CoAs as a group, to see strength/degrees
+
+#assess distribution of acyl-CoA degree within whole group
 ggplot(node) +
   geom_histogram(aes(x = log10(degree), fill = CoA)) +
-  labs(x = "Strength of Node (# connections)") +
-  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("1", "10", "100", "1000")) +
+  labs(x = "Strength of Node (log10 # connections)") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis") +
   NULL
 
+node %>% 
+  mutate(decile = ntile(strength, 10)) %>% 
+  group_by(decile, CoA) %>% 
+  summarize(n = n())
 ```
 
 ```{r}
-#second graph 
-g <- graph_from_data_frame(edge, directed = TRUE, vertices = node)
-ggraph(g, layout = "auto") +
-  geom_edge_link(aes()) + 
-  geom_node_point(aes(size = degree)) +
-  #geom_node_text(aes(label = name), label.size = 0.01, repel = TRUE) +
-  theme_void() + 
+#Next goal is to find similarities within network; therefore, adjacency matrix as a mathematical representation of a network and use it to find metabolites with similar connection patterns
+edge_swap <- edge %>%
+  mutate(temp = to, to = from, from = temp) %>% 
+  select(-temp)
+
+# Bind edge and edge_swapped by row
+edge_bind <- bind_rows(edge, edge_swap)
+
+rm(edge_swap) #remove temp object
+
+# Using ties_bound, plot to vs. from, filled by weight
+ggplot(edge_bind, aes(x = from, y = to)) + 
+  geom_raster(aes (fill = weight)) +  # Add a raster geom
+  labs(x = "", y = "", fill = "Edge\nWeight") + # Label the color scale as "weight"
+  scale_fill_viridis(discrete = FALSE, direction = -1, option = "viridis") +
+  theme(panel.background = element_blank(),
+        axis.text.x = element_blank(), 
+        axis.text.y = element_blank()) +
+  coord_equal() +
   NULL
+
+# Using nodes, plot strength vs.degree
+ggplot(node, aes(x = degree, y = strength)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) # Add a smooth geom with linear regression method
+
+cor(node$degree, node$strength) # Calculate the Pearson correlation coefficient 
+
+#set-up adjacency matrix
+adj_mat <- as_adjacency_matrix(g, attr = "weight", names = TRUE, sparse = igraph_opt("sparsematrices"))
+adj_mat <- as.matrix(adj_mat)
+# Compute the Pearson correlation matrix of adjacency matrix
+S <- cor(adj_mat)
+# Set the diagonal of S to 0
+diag(S) <- 0
+# Flatten S to be a vector
+flat_S <- as.vector(S)
+
+# Plot a histogram of similarities
+hist(flat_S, xlab = "Similarity", main = "Histogram of Correlation Coeffecients")
+
+# Next goal is to graph adjacency matrix to look for metabolic subnetworks
+h <- graph_from_adjacency_matrix(S, mode = "undirected", weighted = TRUE)
+sim_df <- igraph::as_data_frame(h, what = "edges")
+
+# Convert sim_df to a tibble
+sim_df <- as_tibble(sim_df)
+
+# Check the results; weight here corresponds to correlation coeffs
+sim_df %>% 
+  arrange(desc(weight)) # Arrange by descending similarity
+
+#Visualize similarity; the whole  network can be difficult to understand/visualize; one useful way to make it more comprehensible is to think about clusters of similar metabolites By filtering the similarity matrix, then converting it to a network, we can see how many groups the whole metabolic network contains.
+sim_filtered <- sim_df %>% 
+  filter(weight > 0.6) # Filter on similarity greater than 0.6
+
+# Convert to an undirected graph and Plot with auto layout
+filtered_network <- graph_from_data_frame(sim_filtered, directed = FALSE)
+
+ggraph(filtered_network, layout = "auto") + 
+  geom_edge_link(aes(color = weight)) +   #mapping edge transparency to similarity, so only similar metabolites are clustered together
+  #scale_edge_color_viridis(discrete = FALSE, begin = 0, end = 1) + #discrete = FALSE, direction = -1, option = "viridis"
+  geom_node_point() +
+  #geom_node_text(aes(label = name), label.size = 0.01, repel = TRUE) +
+  theme_void() +
+  NULL
+```
+
+```{r}
+#final 'hairball' graph 
+g <- graph_from_data_frame(edge, directed = FALSE, vertices = node)
+ggraph(g, layout = "auto") +
+  geom_edge_link(aes(alpha = weight), show.legend = FALSE) + 
+  geom_node_point(aes(size = degree, alpha = 0.2), show.legend = FALSE) + #need to put graph here becuase it integrates degree calcs from first graph
+  #geom_node_text(aes(label = name), label.size = 0.01, repel = TRUE) + #would love labels, but too many!
+  theme_void() +
+  NULL
+
+#save plot
+ggsave("output/fig4.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 
 ```
 
@@ -516,8 +603,8 @@ thioester <- metabolites %>%
   mutate(type = "Thioester") %>% 
   mutate(pre_post = if_else(str_detect(smiles, "C\\(=O\\)S"), "pre", "post")) %>% 
   separate(smiles, into = c("pre_smiles", "post_smiles"), sep = "S", remove = FALSE, extra = "merge" ) %>%  #merge is to prevent discarding data "Expected 2 pieces. Additional pieces discarded in 26 rows"
-  mutate(added_carbons = if_else(grepl("pre", pre_post), str_count(pre_smiles, "C"), str_count(post_smiles, "C")))
-
+  mutate(added_carbons = if_else(grepl("pre", pre_post), str_count(pre_smiles, "C"), str_count(post_smiles, "C"))) #entry errors
+  
 #because the smiles code has thioesters with orientations that could add carbon on either sides of the code, the first mutate adds a pre_post column to indicate which side will be added; then the separate will split at the thiol; then the last mutate will count the number of carbons in either the pre or post column, depending.
 
 #these include all from CoA list, except "CoA-"
@@ -530,16 +617,30 @@ thioester <- metabolites %>%
 #thioester$added_carbons <- as.factor(thioester$added_carbons)
 ggplot(thioester) +
   geom_bar(aes(added_carbons))
-```
-#Merge thioesters and phosphates
-```{r}
-carbon <- full_join(thioester, phosphate)
 
-#start thinking about how to quanity/overlay (fuzzyjoin?) whether PTM is known
-sum(str_detect(carbon$name, "acetyl|Acetyl")) #this is complicated by ... or could be benefited by the notion that acetyl-mods can come from several types of metabolites
+#count aldehydes
+aldehyde <- metabolites %>%
+  filter(str_detect(name, "aldehyde")) %>% #str_detect for aldehydes give too many false positives
+  arrange(average_molecular_weight) %>% 
+  mutate(type = "Aldehyde") %>% 
+  mutate(added_carbons = str_count(smiles, "C"))
+  
+#Merge thioesters, phosphates, aldehydes
+carbon <- full_join(thioester, phosphate) %>% 
+  full_join(aldehyde) %>% 
+  arrange(average_molecular_weight) %>% 
+  select(-c("smiles", "pre_smiles", "post_smiles", "pre_post", "normal_concentrations"))
 
 ggplot(carbon) +
-  geom_bar(aes(added_carbons))
+  geom_histogram(aes(x = added_carbons, fill = type)) +
+  labs(x = "Number of Carbons Added") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "Class") +
+  scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30), limits = c(0,30)) + #set limits to discard entry errors
+  NULL
+
+#save plot
+ggsave("output/fig5.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
+
 ```
 
 
@@ -548,4 +649,5 @@ Code chunk to save files
 ```{r}
 write_delim(ptm, "output/ptm.csv", delim = ",", na = "")
 write_delim(metabolites, "output/metabolites.csv", delim = ",", na = "")
+write_delim(carbon, "output/reactive_carbon.csv", delim = ",", na = "")
 ```
