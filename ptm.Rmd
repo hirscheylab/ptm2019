@@ -1,12 +1,11 @@
 ---
 title: "Nat. Chem. Bio (2019)"
-output: html_notebook
+output:
+  html_notebook: default
+  pdf_document: default
 ---
 
 This is an [R Markdown](http://rmarkdown.rstudio.com) notebook accompanying the invited review on reactive activate carbon species, protein modifications, and carbon stress. When you execute code within the notebook, the results appear beneath the code and Figures will be save to the working directory. 
-
--number
--distribution across amino acids
 
 ##Load libraries
 ```{r warning=FALSE, echo=TRUE}
@@ -108,7 +107,7 @@ ptm %>%
   count(TG, FT, sort = TRUE) %>% #target (TG) is exactly what I need
   mutate(TG = fct_reorder2(TG, FT, n, .desc = FALSE)) %>% 
   ggplot(aes(TG, n, fill = FT)) +
-  geom_col() +
+  geom_col(color = "gray50") +
   coord_flip() +
   #labs(x = "", title = "Distribution of Modifications Across Amino Acids", caption = "Plot by @matthewhirschey | Data from @Uniprot") + 
   labs(x = "") +
@@ -259,10 +258,10 @@ CoA %>%
   count(average_molecular_weight, sort = TRUE) #code chunk to count acyl-CoAs, both total and discrete Molecular Weights
 
 ggplot(CoA) +
-  geom_bar(aes(x = carbon_num_acyl, fill = acyl_description)) +
+  geom_bar(aes(x = carbon_num_acyl, fill = acyl_description), color = "gray50") +
   labs(x = "Acyl-CoA Carbon Number") +
   expand_limits(y = 40) +
-  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "Class") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "magma", name = "Class") +
   scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20,22,24,26,28), limits = c(0,28)) + 
   NULL
 
@@ -589,7 +588,7 @@ ggraph(g, layout = "auto") +
   NULL
 
 #save plot
-ggsave("output/fig4.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
+ggsave("output/fig4.pdf", plot = last_plot(), dpi = 600)
 
 ```
 
@@ -632,9 +631,9 @@ carbon <- full_join(thioester, phosphate) %>%
   select(-c("smiles", "pre_smiles", "post_smiles", "pre_post", "normal_concentrations"))
 
 ggplot(carbon) +
-  geom_histogram(aes(x = added_carbons, fill = type)) +
+  geom_histogram(aes(x = added_carbons, fill = type), color = "gray50") +
   labs(x = "Number of Carbons Added") +
-  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "Class") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "inferno", name = "Class") +
   scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30), limits = c(0,30)) + #set limits to discard entry errors
   NULL
 
