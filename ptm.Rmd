@@ -1,30 +1,30 @@
 ---
 title: "Nat. Chem. Bio (2019)"
 output:
-  html_notebook: default
-  pdf_document: default
+  pdf_document:
+    toc: TRUE
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) notebook accompanying the invited review on reactive activate carbon species, protein modifications, and carbon stress. When you execute code within the notebook, the results appear beneath the code and Figures will be save to the working directory. 
+This is an [R Markdown](http://rmarkdown.rstudio.com) notebook accompanying the invited review on reactive carbon species, protein modifications, and carbon stress. When you execute code within the notebook, the results appear beneath the code and Figures will be save to the working directory. 
 
 ##Load libraries
-```{r warning=FALSE, echo=TRUE}
-
-#Load libraries
+```{r load_block, warning=FALSE, echo=TRUE}
 library(tidyverse)
 library(janitor)
 library(viridis)
 library(XML)
 library(data.table)
-library(fuzzyjoin)
 library(igraph)
 library(ggraph)
+library(rmarkdown)
+library(beepr) #long analysis; get some coffee, and comeback when ready
 
 #clear environment
 rm(list=ls()) 
 
 #print Session information for provenance and reproducibility
-utils:::print.sessionInfo(sessionInfo()[-7]) #You can remove an item from sessionInfo(), which is a list with a class attribute, by printing the resulting object omitting one of the list items (omitted list of packages installed, but not loaded)
+utils:::print.sessionInfo(sessionInfo()[-7]) 
+#You can remove an item from sessionInfo(), which is a list with a class attribute, by printing the resulting object omitting one of the list items (omitted list of packages installed, but not loaded)
 
 #Set theme
 theme_set(theme_light())
@@ -32,8 +32,9 @@ theme_set(theme_light())
 
 ##Figure 1
 Overall goal is to quanitfy known landscape of protein amino acids. Chose to get data from Uniprot, as a comprehensive and validated resouce containing data for human proteins. 
-```{r}
-ptm_raw <- read_tsv("https://www.uniprot.org/docs/ptmlist.txt", col_names = FALSE, skip = 48) #skip 48 first lines which contain data file dictionary
+```{r fig1}
+ptm_raw <- read_tsv("https://www.uniprot.org/docs/ptmlist.txt", col_names = FALSE, skip = 48) 
+#skip 48 first lines which contain data file dictionary
 
 #URL points to a datafile, to increase reproducibility; datafile is also downloaded 12/21/2018 and saved in working data directory in case URL link breaks
 
@@ -73,7 +74,8 @@ ptm$KW <- as.factor(ptm$KW)
 ptm$FT <- str_trim(ptm$FT, side = "left") #use stringr pkg to remove white space
 ptm$TG <- str_trim(ptm$TG, side = "left")
 ptm$TG <- str_replace(ptm$TG, "\\.", "") #need two \\ to mean literal "."
-
+ptm$KW <- fct_explicit_na(ptm$KW, na_level = "Other") #get rid of NAs in KW by making a factor
+ptm <- ptm %>% select(-Cop, -Dis) #remove copyright and distribution columns
 
 #a little bit of eda
 count(ptm, FT, sort = TRUE)
@@ -107,17 +109,16 @@ ptm %>%
   count(TG, FT, sort = TRUE) %>% #target (TG) is exactly what I need
   mutate(TG = fct_reorder2(TG, FT, n, .desc = FALSE)) %>% 
   ggplot(aes(TG, n, fill = FT)) +
-  geom_col(color = "gray50") +
+  geom_col(color = "black") +
   coord_flip() +
   #labs(x = "", title = "Distribution of Modifications Across Amino Acids", caption = "Plot by @matthewhirschey | Data from @Uniprot") + 
-  labs(x = "") +
+  labs(x = "", y = "Count") +
   expand_limits(y = 80) +
-  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("Carbohydrate", "Lipid", "Modification"), name = "") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("Carbohydrate", "Lipid", "All Other"), name = "Modification Type") +
   NULL
 
 #save plot
 ggsave("output/fig1.pdf", plot = last_plot(), dpi = 600)
-#ggsave("output/aa.png", plot = last_plot(), dpi = 300)
 ```
 
 ##Figure 2
@@ -127,8 +128,8 @@ ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   ggplot(aes(x = MA, fill = FT)) +
   geom_dotplot(method = "dotdensity", stackgroups = TRUE, binpositions = "all", binwidth = 20, dotsize = 1.05) + #empircally determined bin width + dot size ;]
-  labs(x = "Average Mass Appended (Da)") +
-  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("Carbohydrate", "Lipid", "Modification"), name = "")+
+  labs(x = "Average Mass Appended (Da)", y = "Count") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", labels = c("Carbohydrate", "Lipid", "All Other"), name = "Modification Type")+
   scale_x_continuous(breaks = c(0,100,200,300,400,500,600,700,800,900,1000), limits = c(0,1000)) +
   scale_y_continuous(breaks = c(0,10,20,30,40,50,60,70), limits = c(0,70)) + #manually scale y because of geom_dotplot limitations
   NULL
@@ -143,24 +144,10 @@ ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   count(KW, sort = TRUE)
 ```
-```{r fig2_graveyard, include=FALSE}
-#graveyard
-#would it be more interesting to fill by: amino acid, chemical property of AA (polar, non-polar, etc.), or by key word (KW) of modifiaction? Rather than by "type"?
-ptm %>%
-  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
-  ggplot(aes(x = MA, fill = TG)) +
-  geom_dotplot(method = "dotdensity", stackgroups = TRUE, binpositions = "all", binwidth = 20, dotsize = 1.05) + #empircally determined bin width
-  labs(x = "Average Mass Appended (Da)") +
-  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "")+
-  scale_x_continuous(breaks = c(0,100,200,300,400,500,600,700,800,900,1000), limits = c(0,1000)) +
-  scale_y_continuous(breaks = c(0,10,20,30,40,50,60,70), limits = c(0,70)) + #manually scale y because of geom_dotplot limitations
-  NULL
-#too many categorical variables: need to fuzzy join AA + AA property (basic, acidic, hydrophobic, etc.) to be useful
-```
 
-###Note (lysine)
+###Lysine Analysis
 In this code chunk, the goal is to count and summarize lysine modifications.
-```{r}
+```{r lysine}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Lysine") %>% 
@@ -175,7 +162,7 @@ ptm %>%
 
 ##Figure 3
 In this figure, the goal is to determine how many acyl-CoA species have been measured
-```{r import_HMDB, eval=FALSE, include=FALSE}
+```{r import_fig3, eval=FALSE, include=FALSE}
 Import metabolite data from HMDB (http://www.hmdb.ca/downloads); all metabolites http://www.hmdb.ca/system/downloads/current/hmdb_metabolites.zip
 
 # Parse the XML files
@@ -190,13 +177,13 @@ save(metabolites_raw, file = "data/metabolites_raw.Rda")
 
 ```
 
-```{r}
+```{r reload_fig3}
 #reload
 load("data/proteins_raw.Rda")
 load("data/metabolites_raw.Rda")
 ```
 
-```{r}
+```{r clean_fig3}
 #as.X
 proteins_raw <- as_tibble(proteins_raw)
 metabolites_raw <- as_tibble(metabolites_raw)
@@ -209,7 +196,7 @@ metabolites <- metabolites_raw %>%
   remove_empty("rows") 
 ```
 
-```{r}
+```{r fig3}
 #count CoAs
 CoA <- metabolites %>% 
   filter(str_detect(name, "CoA")) %>% 
@@ -245,10 +232,12 @@ CoA <- CoA %>%
                                     if_else(str_detect(smiles_acyl, "C\\(O\\)C"), "Hydroxyl",
                                     if_else(str_detect(smiles_acyl, "C\\=C"), "Methylene",   
                                     if_else(str_detect(smiles_acyl, "C\\(\\=C\\)"), "Methylene",  
-                                    if_else(str_detect(smiles_acyl, "C\\=O"), "Aldehyde",  
+                                    if_else(str_detect(smiles_acyl, "CC\\=O"), "Aldehyde", #hardcode aldehyde
+                                    if_else(str_detect(smiles_acyl, "C\\=O"), "Straight", #hardcode formyl        
                                     if_else(str_detect(smiles_acyl, "C\\(C\\)"), "Branched",        
                                     if_else(str_detect(smiles_acyl, "CCC"), "Straight", 
-                                        "Other")))))))))
+                                    if_else(str_detect(smiles_acyl, "CC\\(\\=O\\)"), "Straight", #hardcode acetyl         
+                                        "Other")))))))))))
          
 CoA %>%
   filter(str_detect(smiles_acyl, "N")) %>% #looking
@@ -258,10 +247,10 @@ CoA %>%
   count(average_molecular_weight, sort = TRUE) #code chunk to count acyl-CoAs, both total and discrete Molecular Weights
 
 ggplot(CoA) +
-  geom_bar(aes(x = carbon_num_acyl, fill = acyl_description), color = "gray50") +
-  labs(x = "Acyl-CoA Carbon Number") +
+  geom_bar(aes(x = carbon_num_acyl, fill = acyl_description), color = "black", width = 0.8) +
+  labs(x = "Acyl-CoA Chain Length (# of carbons)", y = "Count") +
   expand_limits(y = 40) +
-  scale_fill_viridis(discrete = TRUE, direction = -1, option = "magma", name = "Class") +
+  scale_fill_viridis(discrete = TRUE, direction = -1, option = "magma", name = "Acyl Class") +
   scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20,22,24,26,28), limits = c(0,28)) + 
   NULL
 
@@ -269,9 +258,9 @@ ggplot(CoA) +
 ggsave("output/fig3.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 
 ```
-###Note (acyl-phosphates)
+###Acyl-phosphate Analysis
 Code chunk to count acyl-phosphates. 10 total counted, although strangely two are listed at 266 Da. Same or different?
-```{r}
+```{r acyl_phosphates}
 phosphate <- metabolites %>% 
   filter(str_detect(smiles, "C\\(=O\\)OP")) %>% #regex the smiles code for carbonyl-phosphate bond
   arrange(average_molecular_weight) %>% 
@@ -285,9 +274,9 @@ phosphate %>%
 
 ```
 
-###Note (cysteine)
+###Cysteine Analysis
 In this code chunk, the goal is to count and summarize cysteine modifications. Counted 57 (as of Feb 2019), however does not include 3 published modifiations: succination, 2,3-dicarboxylpropylation (i.e. itaconylation), or s-acetylation, so OK to conclude 60, at least.
-```{r}
+```{r cysteine}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Cysteine") %>% 
@@ -299,9 +288,9 @@ ptm %>%
   filter(TG == "Cysteine") %>% 
   arrange(MA) #sorts by mass, low to high
 ```
-###Note (serine)
+###Serine Analysis
 In this code chunk, the goal is to count and summarize serine modifications. Counted 70 (as of Feb 2019). 
-```{r}
+```{r serine}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Serine") %>% 
@@ -331,18 +320,18 @@ ptm %>%
   arrange(MA) #sorts by mass, low to high
 ```
 
-###Note (phenylalanine)
+###Phenylalanine Analysis
 In this code chunk, the goal is to count and summarize phenylalanine modifications. Counted 5 (as of Feb 2019); 1?
-```{r}
+```{r phenylalanine}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(TG == "Phenylalanine") %>% 
   arrange(MA) #sorts by mass, low to high
 ```
 
-###Note (backbone)
+###Protein Backbone Analysis
 In this code chunk, the goal is to count and summarize backbone modifications. First look at backbone alone; next look at the part of the protein where these are ascribed; then look at distribution of all backbone modifications on amino acids (glycine is the most); but, these are all n- or c-term modifications; if you look at protien core modifications, these are all serine/threonine/tyrosine and cysteine.
-```{r}
+```{r backbone}
 ptm %>% 
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   filter(str_detect(PA, "backbone")) %>% 
@@ -383,7 +372,7 @@ ptm %>%
 
 ##Figure 4
 The goal in this figure is to build a network diagram of metabolites and proteins, and then determine (count?) how many reactive species are a nodes. This might be a way to look at connectedness of metabolites, and ask if reactive metabolites are more or less connected than non-reactive ones. To do this, I need a list of nodes (metabolites) and a list of edges (proteins), and the relationship between them.
-```{r}
+```{r fig4_data}
 #to restart network analysis, uncomment this next line of code
 #rm(reaction, node, link, link_group, edge)
 kegg_reaction_raw <- fread('http://rest.kegg.jp/list/reaction', header = FALSE, col.names = c("rid", "reaction"))
@@ -429,8 +418,9 @@ reaction$product <- str_remove(reaction$product, "^n ") #start of string
 reaction$reactant <- str_remove(reaction$reactant, "^n ") #start of string
 ```
 
-```{r}
-#temp code to work with small df for testing; uncomment for test runs
+```{r fig4}
+#temp code to work with small df for testing
+#uncomment for test runs; comment out for final analysis
 #reaction <- slice(reaction, 1:1000)
 
 omit <- NA #code to replace commented out code below
@@ -508,7 +498,7 @@ node %>%
   summarize(n = n())
 ```
 
-```{r}
+```{r fig4_network}
 #Next goal is to find similarities within network; therefore, adjacency matrix as a mathematical representation of a network and use it to find metabolites with similar connection patterns
 edge_swap <- edge %>%
   mutate(temp = to, to = from, from = temp) %>% 
@@ -577,7 +567,7 @@ ggraph(filtered_network, layout = "auto") +
   NULL
 ```
 
-```{r}
+```{r fig4_hairball}
 #final 'hairball' graph 
 g <- graph_from_data_frame(edge, directed = FALSE, vertices = node)
 ggraph(g, layout = "auto") +
@@ -594,7 +584,7 @@ ggsave("output/fig4.pdf", plot = last_plot(), dpi = 600)
 
 ##Figure 5
 In this figure, the goal is to determine how many reactive [human] metabolites there are and to determine how many are associated with PTMs
-```{r}
+```{r fig5}
 #count thioesters
 thioester <- metabolites %>% 
   filter(str_detect(smiles, "C\\(=O\\)S") | str_detect(smiles, "SC\\(=O\\)")) %>% #regex the smiles code for thioesters at either orientation
@@ -614,8 +604,6 @@ thioester <- metabolites %>%
 #sum(str_count(thioester$smiles, "SC\\(=O\\)")) #80
 
 #thioester$added_carbons <- as.factor(thioester$added_carbons)
-ggplot(thioester) +
-  geom_bar(aes(added_carbons))
 
 #count aldehydes
 aldehyde <- metabolites %>%
@@ -631,10 +619,9 @@ carbon <- full_join(thioester, phosphate) %>%
   select(-c("smiles", "pre_smiles", "post_smiles", "pre_post", "normal_concentrations"))
 
 ggplot(carbon) +
-  geom_histogram(aes(x = added_carbons, fill = type), color = "gray50") +
-  labs(x = "Number of Carbons Added") +
+  geom_bar(aes(x = added_carbons, fill = type), color = "black", width = 0.8) +
+  labs(x = "Theoretical Carbons Appended") +
   scale_fill_viridis(discrete = TRUE, direction = -1, option = "inferno", name = "Class") +
-  scale_x_continuous(breaks = c(0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30), limits = c(0,30)) + #set limits to discard entry errors
   NULL
 
 #save plot
@@ -645,8 +632,15 @@ ggsave("output/fig5.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 
 ##Save final files
 Code chunk to save files
-```{r}
+```{r save}
 write_delim(ptm, "output/ptm.csv", delim = ",", na = "")
 write_delim(metabolites, "output/metabolites.csv", delim = ",", na = "")
 write_delim(carbon, "output/reactive_carbon.csv", delim = ",", na = "")
+beep(sound = 8) #because mario is awesome
 ```
+
+```{r}
+#rmarkdown::render("ptm.Rmd", "pdf_document", output_dir = "output/")
+#keep getting error; b/c circular? Copy line above and run manually in Console.
+```
+
