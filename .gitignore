@@ -10,3 +10,4 @@ data/hmdb_metabolites.xml
 data/hmdb_proteins.xml
 data/20aa.txt
 output/
+*.Rproj
