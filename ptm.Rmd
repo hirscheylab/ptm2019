@@ -9,7 +9,7 @@ output:
     df_print: paged
     toc: yes
 ---
-This is an [R Markdown](http://rmarkdown.rstudio.com) notebook accompanying the invited review on reactive carbon species, protein modifications, and carbon stress. When you execute code within the notebook, the results appear beneath the code and Figures will be save to the working directory. 
+This is an [R Markdown](http://rmarkdown.rstudio.com) notebook accompanying a review on protein modifications. When you execute code within the notebook, the results appear beneath the code and Figures will be save to the working directory. 
 
 ##Load libraries
 ```{r load_block, warning=FALSE, echo=TRUE}
@@ -39,6 +39,8 @@ ptm_raw <- read_tsv("https://www.uniprot.org/docs/ptmlist.txt", col_names = FALS
 #skip 48 first lines which contain data file dictionary
 
 #URL points to a datafile, to increase reproducibility; datafile is also downloaded 12/21/2018 and saved in working data directory in case URL link breaks
+#alt
+#ptm_raw <- read_tsv("data/ptmlist.txt", col_names = FALSE, skip = 48)
 
 #make working df
 ptm <- ptm_raw %>% 
