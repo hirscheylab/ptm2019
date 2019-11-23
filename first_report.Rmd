@@ -1,0 +1,146 @@
+---
+title: "PTM discovery dates"
+output: html_notebook
+---
+
+```{r setup}
+library(tidyverse)
+library(rentrez) #https://cran.r-project.org/web/packages/rentrez/vignettes/rentrez_tutorial.html
+library(lubridate)
+library(here)
+
+#rm(list=ls())
+```
+
+#explore
+```{r}
+entrez_db_searchable("pubmed")
+```
+
+#container
+```{r eval=FALSE}
+first <- tibble(i = character(), 
+                id = numeric(),
+                year = character())
+```
+
+#first search
+```{r}
+#terms <- c("lysine butyrylation", "lysine acetylation", "lysine succinylation")
+#terms <- sample(ptm_vec, 10)
+terms <- ptm_vec #from ptm.Rmd
+
+for (i in terms) {
+  message("Getting entry for ", i)
+  Sys.sleep(5) #add sleepy time according to https://www.ncbi.nlm.nih.gov/robots.txt
+  
+  num <- entrez_search(db="pubmed", 
+                          term = i, 
+                          retmax = 0) %>% #350K phosphorylation entries!!!
+    pluck(., 2) 
+  
+  search <- entrez_search(db="pubmed", 
+                          term = i, 
+                          retmax = num) %>%
+    pluck(., 1) 
+  
+  
+  search <- as.double(search)
+  
+  if(length(search) == 0) {
+    id <- 0
+    year <- NA
+  } else {
+  id <- min(search) #pubmed ids start small, and count up
+    year <- entrez_summary(db = "pubmed", id = id) %>% 
+    pluck(., "pubdate") %>% 
+    str_extract("\\d{4}") #extract first 4 digits from the date string to get year
+  }
+  tmp <- tibble(i, id, year)
+  
+  first <- first %>% 
+    bind_rows(tmp)
+  
+}
+
+beep(sound = 8) #because mario is awesome
+save(first, file=here::here("data", "first.RData"))
+
+#this will give me a pubmed ID for each of the first entries of a search term
+
+#ac_search
+#ac_search$ids
+
+#write_csv(first, here::here("first.csv"))
+
+```
+
+#manually set some dates, NAs, etc.
+```{r}
+first <- vroom(here::here("first.csv"))
+first <- first %>% 
+  rename(ID = i, 
+         pmid = id)
+```
+
+
+#plot
+```{r}
+first %>% 
+  mutate(year = as.numeric(year)) %>% 
+  group_by(year) %>% 
+  summarize(n = n()) %>% 
+  ggplot() +
+  geom_step(aes(x = year, y = cumsum(n), group = 1))
+```
+
+#merge dates
+Run ptm.Rmd, then run pir.Rmd, then the code chunk below will merge them all
+```{r}
+load(file=here::here("data", "ptm.RData"))
+first_ptm <- ptm %>% 
+  select(AC, ID, FT, KW, DR) %>% 
+  left_join(pir_clean, by = c("DR" = "id"))
+```
+
+#merge with first
+```{r}
+first_ptm$ID <- str_trim(first_ptm$ID, side = "left")
+first_ptm$year <- as.numeric(first_ptm$year)
+first_ptm$pmid <- as.numeric(first_ptm$pmid)
+
+first_ptm <- first_ptm %>% 
+  left_join(first, by = "ID") 
+
+first_ptm <- first_ptm %>% 
+  mutate(year.x = replace_na(year.x, 2020), 
+         year.y = replace_na(year.y, 2020))
+
+first_ptm <- first_ptm %>% 
+  mutate(year_final = if_else(year.x < year.y, year.x, year.y)) %>% 
+  mutate(pmid_final = if_else(year.x < year.y, pmid.x, pmid.y)) %>% 
+  mutate(year_final = na_if(year_final, 2020))
+
+```
+
+#plot2
+```{r}
+first_ptm %>% 
+  mutate(year_final = as.numeric(year_final)) %>% 
+  group_by(year_final) %>% 
+  summarize(n = n()) %>% 
+  ggplot() +
+  geom_step(aes(x = year_final, y = cumsum(n), group = 1))
+```
+
+
+
+
+
+%>% 
+  mutate(diff = year.x - year.y) #scraped is y
+first_ptm <- first_ptm %>% 
+  mutate(earlier = if_else()
+
+```
+

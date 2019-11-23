@@ -25,7 +25,7 @@ library(beepr) #long analysis; get some coffee, and comeback when ready
 rm(list=ls()) 
 
 #print Session information for provenance and reproducibility
-utils:::print.sessionInfo(sessionInfo()[-7]) 
+utils:::print.sessionInfo(sessionInfo()[-8]) 
 #You can remove an item from sessionInfo(), which is a list with a class attribute, by printing the resulting object omitting one of the list items (omitted list of packages installed, but not loaded)
 
 #Set theme
@@ -80,6 +80,7 @@ ptm$TG <- str_trim(ptm$TG, side = "left")
 ptm$TG <- str_replace(ptm$TG, "\\.", "") #need two \\ to mean literal "."
 ptm$KW <- fct_explicit_na(ptm$KW, na_level = "Other") #get rid of NAs in KW by making a factor
 ptm <- ptm %>% select(-Cop, -Dis) #remove copyright and distribution columns
+ptm$KW <- str_trim(ptm$KW, side = "both")
 
 #a little bit of eda
 count(ptm, FT, sort = TRUE)
@@ -120,6 +121,41 @@ ptm %>%
 
 #save plot
 ggsave("output/fig2.pdf", plot = last_plot(), dpi = 600)
+
+
+
+#####################################################
+#pull
+ptm_vec <- ptm %>%
+  filter(!FT == "CROSSLNK") %>% 
+  select(id, AC) %>% 
+  filter(str_detect(id, "Blocked amino end", negate = TRUE)) %>% 
+  filter(str_detect(id, "\\.\\.\\.", negate = TRUE)) %>% 
+  separate(id, into = c("id"), sep = "\\([:alpha:]{3}\\)$") %>% 
+  distinct(id) %>% 
+  pull(id)
+
+ptm_vec <-  str_trim(ptm_vec, side = "both")
+ ##################################################### 
+```
+
+```{r}
+ptm_dr <- ptm_raw %>% 
+  separate(X1, c("key", "value"), sep = 3) %>% 
+  mutate(id = if_else(grepl("ID", key), value, NA_character_)) %>% #must call NA_char so that fill fxn works
+  fill(id) 
+
+#clean more
+ptm_dr$key <- str_trim(ptm_dr$key, side = "right") #use stringr pkg to remove white space *janitor works on colnames only
+
+ptm_dr <- ptm_dr %>% 
+  filter(key == "ID" | str_detect(value, "RESID") | key == "AC") %>% 
+  spread(key, value) %>% 
+  select(ID, AC, DR)
+
+ptm_dr$DR <- str_trim(ptm_dr$DR, side = "left")
+ptm_dr$DR <- str_remove(ptm_dr$DR, "RESID\\:\\s")
+
 ```
 
 ##Figure 3

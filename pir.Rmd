@@ -1,0 +1,138 @@
+---
+title: "Protein Information Resource"
+subtitle: "RESID database scraping"
+output: html_notebook
+---
+
+Goal is to get information on first report of a PTM. Found this information on PIR. Want to scrape it, then cross-reference and complete with PUBMED queries
+
+##Load libraries & clear environment
+```{r}
+library(tidyverse)
+library(lubridate)
+library(rvest)
+library(janitor)
+library(feather)
+library(here)
+library(beepr)
+library(data.table)
+
+#rm(list=ls()) #clear environment
+
+#how long?
+start_time <- Sys.time()
+```
+
+#pir scrape
+Get resids from PIR master page
+```{r}
+page <- read_html("http://pir0.georgetown.edu/cgi-bin/resid")
+pir_raw <- page %>% 
+  html_node("table") %>% 
+  html_table(fill = TRUE)
+
+pir <- pir_raw %>% 
+  filter(str_detect(X1, "AA\\d{4}")) %>% 
+  slice(-1:-2) %>% 
+  select(X1:X7) %>% 
+  rename(resid = X1,
+         name	= X2, 
+         sequence_spec = X3, 
+         weight	= X4, 
+         keyword = X5, 
+         feature = X6, 
+         enzyme = X7)
+save(pir, file=here::here("data", "pir.RData"))
+
+```
+
+#page scrape
+Get data from a single page 
+```{r eval=FALSE}
+pir_master <- tibble(
+  id = character(), 
+  data = list()
+)
+
+#id <- "AA0601"
+resid <- pir$resid
+#resid_short <- resid[1:3]
+for (id in resid) {
+page <- read_html(paste0("http://pir0.georgetown.edu/cgi-bin/resid?id=", id))
+piraa_raw <- page %>% 
+  html_nodes(".annot") %>% 
+  html_text(trim = TRUE)
+
+piraa <- tibble::enframe(piraa_raw) %>% 
+  mutate(id = !!id) %>% 
+  select(id, value) %>% 
+  nest(data = c(value))
+
+pir_master <- pir_master %>% 
+  bind_rows(piraa)
+}
+save(pir_master, file=here::here("data", "pir_master.RData"))
+beep(sound = 8) #because mario is awesome
+```
+
+```{r}
+load(file=here::here("data", "pir_master.RData"))
+load(file=here::here("data", "pir.RData"))
+
+
+pir_unnested <- pir_master %>% 
+  unnest(cols = c(data))
+
+pir_clean <- pir_unnested %>% 
+  filter(str_detect(value, "Reference"))
+
+#pir_clean <- pir_unnested %>% 
+#  separate(value, into = c("temp", "authors"), sep = "Authors\\:") 
+#pir_clean$authors <- str_trim(pir_clean$authors, side = "left")
+#%>% 
+#separate(authors, into = c("authors", "title"), sep = "Title\\:") 
+
+pir_clean <- pir_clean %>% 
+  mutate(pmid = str_extract(value, "(?<=PMID\\:)\\d{1,8}")) %>% 
+  mutate(year = str_extract(pir_clean$value, "\\d{4}(?=\\sTitle\\:)")) %>% 
+  arrange(id, year) %>% 
+  distinct(id, .keep_all = TRUE)
+
+
+```
+
+#join
+```{r}
+pir <- pir %>% 
+  left_join(pir_clean, by = c("resid" = "id"))
+
+#clean
+pir <- map(pir, ~ na_if(., "&nbsp"))
+```
+
+#get systematic names
+```{r}
+pir_sys <- pir_unnested %>% 
+  filter(str_detect(value, "Systematic"))
+  
+pir_sys <- pir_sys %>% 
+  mutate(sys_name = str_extract(pir_sys$value, "(?<=name\\:).*(?=\\sCross)")) #.* matches any number of char
+
+#str_extract(pir_sys$value, "(?<=name\\:).")
+#str_extract(pir_sys$value, ".(?=\\sCross)")
+```
+
+
+
+```{r}
+beep(sound = 8) #because mario is awesome
+
+#how long to scrape?
+end_time <- Sys.time()
+time_taken <- round(as.duration(start_time %--% end_time)/dminutes(1), digits = 1)
+print(time_taken)
+
+```
+
+
+
