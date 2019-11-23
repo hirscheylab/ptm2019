@@ -121,9 +121,9 @@ ptm %>%
 
 #save plot
 ggsave("output/fig2.pdf", plot = last_plot(), dpi = 600)
+```
 
-
-
+```{r}
 #####################################################
 #pull
 ptm_vec <- ptm %>%
@@ -140,6 +140,7 @@ ptm_vec <-  str_trim(ptm_vec, side = "both")
 ```
 
 ```{r}
+#Run pir.Rmd first to generate pir_sys
 ptm_dr <- ptm_raw %>% 
   separate(X1, c("key", "value"), sep = 3) %>% 
   mutate(id = if_else(grepl("ID", key), value, NA_character_)) %>% #must call NA_char so that fill fxn works
@@ -151,10 +152,23 @@ ptm_dr$key <- str_trim(ptm_dr$key, side = "right") #use stringr pkg to remove wh
 ptm_dr <- ptm_dr %>% 
   filter(key == "ID" | str_detect(value, "RESID") | key == "AC") %>% 
   spread(key, value) %>% 
-  select(ID, AC, DR)
+  select(ID, AC, DR) %>% 
+  rename(DR_ID = ID)
 
 ptm_dr$DR <- str_trim(ptm_dr$DR, side = "left")
-ptm_dr$DR <- str_remove(ptm_dr$DR, "RESID\\:\\s")
+ptm_dr$DR <- str_remove(ptm_dr$DR, "RESID\\;\\s")
+ptm_dr$DR <- str_remove(ptm_dr$DR, "\\.")
+
+ptm_dr$AC <- str_trim(ptm_dr$AC, side = "left")
+ptm$AC <- str_trim(ptm$AC, side = "left")
+
+ptm <- ptm %>% 
+  left_join(ptm_dr, by = "AC")
+
+ptm <- ptm %>% 
+  left_join(pir_sys, by = c("DR" = "id"))
+
+save(ptm, file=here::here("data", "ptm.RData"))
 
 ```
 
