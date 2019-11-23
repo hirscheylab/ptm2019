@@ -15,6 +15,7 @@ library(feather)
 library(beepr)
 library(data.table)
 library(vroom)
+library(cowplot)
 
 #rm(list=ls()) #clear environment
 
@@ -24,6 +25,7 @@ start_time <- Sys.time()
 
 #pir scrape
 Get resids from PIR master page
+http://pir0.georgetown.edu/cgi-bin/resid
 ```{r}
 page <- read_html("http://pir0.georgetown.edu/cgi-bin/resid")
 pir_raw <- page %>% 
@@ -47,6 +49,8 @@ save(pir, file=here::here("data", "pir.RData"))
 
 #page scrape
 Get data from a single page 
+http://pir0.georgetown.edu/cgi-bin/resid?id=AA0601
+Then loop through all IDs
 ```{r eval=FALSE}
 pir_master <- tibble(
   id = character(), 
@@ -206,7 +210,8 @@ first %>%
 ```
 
 #merge dates
-Run ptm.Rmd, then run pir.Rmd, then the code chunk below will merge them all
+
+PTM data from https://www.uniprot.org/docs/ptmlist has RESID, so Run ptm.Rmd, then run remaining code below, to merge them all
 ```{r}
 load(file=here::here("data", "ptm.RData"))
 first_ptm <- ptm %>% 
@@ -232,6 +237,7 @@ first_ptm <- first_ptm %>%
   mutate(pmid_final = if_else(year.x < year.y, pmid.x, pmid.y)) %>% 
   mutate(year_final = na_if(year_final, 2020))
 
+write_csv(first_ptm, path = here::here("output", "first_ptm.csv"))
 ```
 
 #final plot
@@ -242,17 +248,22 @@ first_ptm %>%
   summarize(n = n()) %>% 
   ggplot() +
   geom_step(aes(x = year_final, y = cumsum(n), group = 1)) + 
-  labs(x = "", y = "Cumulative number of Protein Modifications")
+  labs(x = "Year of Publication", y = "Cumulative Protein Modifications") +
+  theme_half_open()
+
+ggsave(filename = here::here("output", "fig1.pdf"), plot = last_plot())
 ```
 
 
 
+```{r}
+beep(sound = 8) #because mario is awesome
 
-
-%>% 
-  mutate(diff = year.x - year.y) #scraped is y
-first_ptm <- first_ptm %>% 
-  mutate(earlier = if_else()
+#how long to scrape?
+end_time <- Sys.time()
+time_taken <- round(as.duration(start_time %--% end_time)/dminutes(1), digits = 1)
+print(time_taken)
 
 ```
+
 
