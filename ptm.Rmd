@@ -20,9 +20,10 @@ library(XML)
 library(feather)
 library(rmarkdown)
 library(beepr) #long analysis; get some coffee, and comeback when ready
+library(patchwork)
 
 #clear environment
-rm(list=ls()) 
+#rm(list=ls()) 
 
 #print Session information for provenance and reproducibility
 utils:::print.sessionInfo(sessionInfo()[-8]) 
@@ -32,7 +33,7 @@ utils:::print.sessionInfo(sessionInfo()[-8])
 theme_set(theme_light())
 ```
 
-##Figure 2
+##Figure 3a
 Overall goal is to quanitfy known landscape of protein amino acids. Chose to get data from Uniprot, as a comprehensive and validated resouce containing data for human proteins. 
 ```{r fig1}
 ptm_raw <- read_tsv("https://www.uniprot.org/docs/ptmlist.txt", col_names = FALSE, skip = 48) 
@@ -109,33 +110,55 @@ ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   count(TG, sort = TRUE)
 
-ptm %>%
+kw_levels <-
+  ptm %>%
+  filter(!FT == "CROSSLNK") %>% #omit AA cross links only
+  count(KW, sort = TRUE) %>% 
+  slice(1:10) %>% 
+  filter(!is.na(KW)) %>% 
+  pull(KW)
+
+#ptm$KW <- factor(ptm$KW, levels = kw_levels)
+
+fig3a <- 
+  ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   ggplot() +
-  geom_bar(aes(fct_rev(fct_infreq(TG, ordered = TRUE)), fill = fct_rev(fct_infreq(fct_lump(KW, 10)))), color = "black") +
+  geom_bar(aes(fct_rev(fct_infreq(TG, ordered = TRUE)), fill = fct_infreq(KW) %>% fct_lump_n(10)), color = "black") +
   coord_flip() +
   labs(x = "", y = "Count") +
   expand_limits(y = 80) +
-  scale_fill_viridis(discrete = TRUE, direction = -1, option = "viridis", name = "Most Frequent \nModification Class") +
+  scale_fill_viridis(discrete = TRUE, 
+                     direction = -1, 
+                     option = "viridis", 
+                     name = "Most Frequent \nModification Class") +
   NULL
 
 #save plot
-ggsave("output/fig2.pdf", plot = last_plot(), dpi = 600)
+ggsave("output/fig3a.pdf", plot = last_plot(), dpi = 600)
+
+#save ptm
+#save(ptm, file=here::here("data", "ptm.RData"))
+
 ```
 
 ```{r}
 #####################################################
 #pull
 ptm_vec <- ptm %>%
+  filter(!is.na(id)) %>% 
   filter(!FT == "CROSSLNK") %>% 
   select(id, AC) %>% 
   filter(str_detect(id, "Blocked amino end", negate = TRUE)) %>% 
   filter(str_detect(id, "\\.\\.\\.", negate = TRUE)) %>% 
-  separate(id, into = c("id"), sep = "\\([:alpha:]{3}\\)$") %>% 
+  #tidyr::separate(id, into = c("id", "tmp"), sep = "\\([:alpha:]{3}\\)$") %>% 
   distinct(id) %>% 
   pull(id)
 
 ptm_vec <-  str_trim(ptm_vec, side = "both")
+
+save(ptm_vec, file=here::here("data", "ptm_vec.RData"))
+
  ##################################################### 
 ```
 
@@ -172,10 +195,10 @@ save(ptm, file=here::here("data", "ptm.RData"))
 
 ```
 
-##Figure 3
+##Figure 3b
 Goal is to determine how these modifications are distributed; thought it'd be interesting to visualize by average added mass (MA) to a protein, with several small changes in molecular mass, with some very large additions of mass
 ```{r fig2}
-ptm %>%
+fig3b <- ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   ggplot() +
   #geom_point(aes(x = MA, y =0, color = fct_lump(KW, 0)), shape = "|", size = 15, alpha = 1/2) +
@@ -188,7 +211,7 @@ ptm %>%
   NULL
 
 #save plot
-ggsave("output/fig3.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
+ggsave("output/fig3b.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 
 #the reason some average masses (MA) are so abundant is because you find the same modifications across several AAs, thereby weighting some more
 #NB several glycans and lipids are variable masses, and therefore are entered as NA, so not reflected in the graph
@@ -196,6 +219,13 @@ ggsave("output/fig3.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
 ptm %>%
   filter(!FT == "CROSSLNK") %>% #omit AA cross links only
   count(KW, sort = TRUE)
+
+#combine figures for editor
+fig3ab <- 
+  fig3a + fig3b +
+  plot_annotation(tag_levels = 'A')
+ggsave("output/fig3ab.pdf", plot = fig3ab, width = 8, height = 4, dpi = 600)
+
 ```
 ##AA Analyses
 ###Lysine Analysis
@@ -311,9 +341,8 @@ ptm %>%
 
 ##Figure 4
 In this figure, the goal is to determine how many acyl-CoA species have been measured
-```{r import_fig4, eval=FALSE, include=FALSE}
 Import metabolite data from HMDB (http://www.hmdb.ca/downloads); all metabolites http://www.hmdb.ca/system/downloads/current/hmdb_metabolites.zip
-
+```{r import_fig4, eval=FALSE, include=FALSE}
 # Parse the XML files
 proteins_raw <- xmlToDataFrame("data/hmdb_proteins.xml")
 metabolites_raw <- xmlToDataFrame("data/hmdb_metabolites.xml")
@@ -468,10 +497,11 @@ match1 <- CoA %>%
 
 match1 %>% count(mod, sort = TRUE)
 
-ggplot(match1) +
+fig5a <-
+  ggplot(match1) +
   geom_histogram(aes(x = average_molecular_weight_noCoA, fill = mod), color = "black", binwidth = 25, center = 0, position = "stack", alpha = 0.9) +
-  labs(x = "Molecular Weight (Da)", y = "Count") +
-  scale_fill_viridis(discrete = TRUE, direction = 1, option = "inferno", name = "Acyl-CoA Species", labels = c("Not Matching Lysine Modification", "Matching Lysine Modification")) +
+  labs(x = "Molecular Weight (Da)", y = "Possible modifications (#)") +
+  scale_fill_viridis(discrete = TRUE, direction = 1, option = "cividis", name = "Acyl-CoA Species", labels = c("Not Matching Lysine Modification", "Matching Lysine Modification")) +
   NULL
 
 #save plot
@@ -492,14 +522,21 @@ carbon <- full_join(thioester, phosphate) %>%
   arrange(average_molecular_weight) %>% 
   select(-c("smiles", "pre_smiles", "post_smiles", "pre_post", "normal_concentrations"))
 
-ggplot(carbon) +
+fig5b <-
+  ggplot(carbon) +
   geom_bar(aes(x = added_carbons, fill = type), color = "black", width = 0.8) +
-  labs(x = "Theoretical carbons appended", y = "Number of theoretical modifications") +
+  labs(x = "Predicted carbons appended", y = "Possible modifications (#)") +
   scale_fill_viridis(discrete = TRUE, direction = -1, option = "inferno", name = "Class") +
   NULL
 
 #save plot
 ggsave("output/fig5b.pdf", plot = last_plot(), width = 5, height = 5, dpi = 600)
+
+#combine figures for editor
+fig5ab <- fig5a / fig5b +
+  plot_annotation(tag_levels = 'A')
+ggsave("output/fig5ab.pdf", plot = fig5ab, width = 8, height = 5, dpi = 600)
+
 
 ```
 

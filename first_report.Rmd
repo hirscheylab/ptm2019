@@ -52,6 +52,7 @@ Get data from a single page
 http://pir0.georgetown.edu/cgi-bin/resid?id=AA0601
 Then loop through all IDs
 ```{r eval=FALSE}
+load(here::here("data", "pir.RData"))
 pir_master <- tibble(
   id = character(), 
   data = list()
@@ -77,7 +78,7 @@ pir_master <- pir_master %>%
 save(pir_master, file=here::here("data", "pir_master.RData"))
 beep(sound = 8) #because mario is awesome
 ```
-
+# start here
 ```{r}
 load(file=here::here("data", "pir_master.RData"))
 load(file=here::here("data", "pir.RData"))
@@ -142,6 +143,7 @@ first <- tibble(i = character(),
 
 #first search
 ```{r}
+load(here::here("data", "ptm_vec.RData"))
 #terms <- c("lysine butyrylation", "lysine acetylation", "lysine succinylation")
 #terms <- sample(ptm_vec, 10)
 terms <- ptm_vec #from ptm.Rmd
@@ -153,12 +155,12 @@ for (i in terms) {
   num <- entrez_search(db="pubmed", 
                           term = i, 
                           retmax = 0) %>% #350K phosphorylation entries!!!
-    pluck(., 2) 
+    purrr::pluck(., 2) 
   
   search <- entrez_search(db="pubmed", 
                           term = i, 
                           retmax = num) %>%
-    pluck(., 1) 
+    purrr::pluck(., 1) 
   
   
   search <- as.double(search)
@@ -169,7 +171,7 @@ for (i in terms) {
   } else {
   id <- min(search) #pubmed ids start small, and count up
     year <- entrez_summary(db = "pubmed", id = id) %>% 
-    pluck(., "pubdate") %>% 
+    purrr::pluck(., "pubdate") %>% 
     str_extract("\\d{4}") #extract first 4 digits from the date string to get year
   }
   tmp <- tibble(i, id, year)
@@ -202,7 +204,7 @@ first <- first %>%
 #plot
 ```{r}
 first %>% 
-  mutate(year = as.numeric(year)) %>% 
+  dplyr::mutate(year = as.numeric(year)) %>% 
   group_by(year) %>% 
   summarize(n = n()) %>% 
   ggplot() +
@@ -237,6 +239,26 @@ first_ptm <- first_ptm %>%
   mutate(pmid_final = if_else(year.x < year.y, pmid.x, pmid.y)) %>% 
   mutate(year_final = na_if(year_final, 2020))
 
+#clean
+first_ptm <- first_ptm %>% 
+  filter(str_detect(ID, "Cyclo", negate = TRUE), 
+         str_detect(ID, "Blocked", negate = TRUE))
+
+#manual curation
+#<<- is normally used for global assignments. R might be looking for df in parent environment and not in the function itself.
+curate <- function(ac, year, pubmed) {
+  ac_index <- str_which(first_ptm$AC, as.character(ac))
+  first_ptm[[ac_index, 11]] <<- as.numeric(year) 
+  first_ptm[[ac_index, 12]] <<- as.numeric(pubmed)
+}
+curate("PTM-0499", 2016, 27105115)
+curate("PTM-0675", 1982, 7115308)
+curate("PTM-0487", 2014, 24703693)
+curate("PTM-0193", 1975, 1184585)
+#curate("PTM-0639", 1925, 25101001)
+
+#get rid of dupes (some in early refs)
+
 write_csv(first_ptm, path = here::here("output", "first_ptm.csv"))
 ```
 
@@ -246,12 +268,14 @@ first_ptm %>%
   mutate(year_final = as.numeric(year_final)) %>% 
   group_by(year_final) %>% 
   summarize(n = n()) %>% 
+  mutate(cumsum = cumsum(n)) %>% 
   ggplot() +
-  geom_step(aes(x = year_final, y = cumsum(n), group = 1)) + 
+  geom_step(aes(x = year_final, y = cumsum, group = 1)) + 
   labs(x = "Year of Publication", y = "Cumulative Protein Modifications") +
+  scale_x_continuous(limits = c(1920, 2020), breaks = seq(1920, 2020, by = 20)) +
   theme_half_open()
 
-ggsave(filename = here::here("output", "fig1.pdf"), plot = last_plot())
+ggsave(filename = here::here("output", "fig2.pdf"), plot = last_plot(), width = 8, height = 6, units = "in", dpi = 300)
 ```
 
 
